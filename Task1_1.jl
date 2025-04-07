@@ -6,13 +6,15 @@ data = CSV.read("Task1_1.csv", DataFrame)
 p_real = CSV.read("WindFarmData.csv", DataFrame;  delim=';')
 ### IMPORTANT: df_DA is not with correct data ###
 lambda_DA = CSV.read("DA_price.csv", DataFrame;  delim=';')
-
+scenarios = CSV.read("scenario_combinations.csv", DataFrame; delim=';')
+system_status = CSV.read("power_system_conditions.csv", DataFrame; delim=';')
 
 println(p_real)
 
 function scenario_generator(no_of_scenarios)
-    production_index = 
-    DA_price_index = 
+    scenarios_indices 
+    p_real_index = 
+    lambda_DA_index = 
     system_status_index = 
     return p_real[production_index], lambda_DA[DA_price_index], system_status[system_status_index]
 end
