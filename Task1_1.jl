@@ -30,7 +30,6 @@ function scenario_generator(no_of_scenarios)
     
     return p_real, lambda_DA, system_status
 end
-print(scenario_generator(5))
 
 function optimise_bidding_quantity(p_real, lambda_DA, system_status) # later add the input: "pricing_scheme", where it will be either "one-price" or "two-price"
     m = Model(GLPK.Optimizer)
@@ -43,23 +42,49 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status) # later add
     @variable(m, t_delta[t])
 
 
-    @constraint(m, t_up[t] >= 0)
-    @constraint(m, t_down[t] >= 0)
-    @constraint(m, p[t] >= 0)
-    @constraint(m, p[t] <= 500)
-    @constraint(m, t_delta[t] == p_real[t] - p[t])
-    @constraint(m, t_delta[t] == t_up[t] - t_down[t])
+    #@constraint(m, t_up[t] >= 0)
+    #@constraint(m, p[t] >= 0)
+    #@constraint(m, p[t] <= 500)
+    #@constraint(m, t_delta[t] == p_real[t] - p[t])
+    #@constraint(m, t_delta[t] == t_up[t] - t_down[t])
 
+    @constraint(m, [i in t], t_up[i] >= 0)
+    @constraint(m, [i in t], p[i] >= 0)
+    @constraint(m, [i in t], p[i] <= 500)
+    @constraint(m, [i in t], t_delta[i] == p_real[i] - p[i])
+    @constraint(m, [i in t], t_delta[i] == t_up[i] - t_down[i])
+
+    up_price = Vector{Float64}(undef, 24)
+    down_price = Vector{Float64}(undef, 24)
     # One-pricing scheme
-    if system_status == "deficit"
-        up_price = 1.25 * lambda_DA[t]
-        down_price = 1.25 * lambda_DA[t]
-    elseif system_status == "excess"
-        up_price = 0.85 * lambda_DA[t]
-        down_price = 0.85 * lambda_DA[t]
-    else
-        println("Error: system_status must be either 'deficit' or 'excess'")
+    for i in t
+        if system_status[i] == 1   # randomly assigned 1 to deficit and 0 to excess here
+            up_price[i] = 1.25 * lambda_DA[i]
+            down_price[i] = 1.25 * lambda_DA[i]
+        elseif system_status[i] == 0 # randomly assigned 1 to deficit and 0 to excess here
+            up_price[i] = 0.85 * lambda_DA[i]
+            down_price[i] = 0.85 * lambda_DA[i]
+        else
+            println("Error: system_status must be either 'deficit' or 'excess'")
+        end
     end
 
-    @objective(m, Max, sum(lambda_DA[k]*W[k]+up_price*lambda_DA[k]*t_up[k]-down_price*lambda_DA[k]*t_down[k] for k in t)) 
+    @objective(m, Max, sum(lambda_DA[k]*p[k]+up_price[k]*t_up[k]-down_price[k]*t_down[k] for k in t)) 
+    optimize!(m)
+    opt_production = JuMP.value.(p)
+    expected_profit = JuMP.objective_value(m)
+    return opt_production, expected_profit
+    ### we want: optimal hourly proudction quanitity offers, and expected profit
+end
+
+
+no_of_scenarios = 1
+p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
+for i in no_of_scenarios
+    p_real_local = p_real[:, i]
+    lambda_DA_local = lambda_DA[:, i]
+    system_status_local = system_status[:, i]
+    opt_production, expected_profit = optimise_bidding_quantity(p_real_local, lambda_DA_local, system_status_local)
+    println("For scenario ", i, " optimal production quantity: ", opt_production)
+    println("For scenario ", i, " expected profit: ", expected_profit)
 end
