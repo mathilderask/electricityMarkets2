@@ -42,6 +42,9 @@ function optimise_bidding_quantity(p_real, lambda_DA, up_price, down_price)
     @variable(m, t_delta[t])
 
     @constraint(m, [i in t], t_up[i] >= 0)
+    @constraint(m, [i in t], t_up[i] <= 500 - p[i])
+    @constraint(m, [i in t], t_down[i] >= 0)
+    @constraint(m, [i in t], t_down[i] <= p[i])
     @constraint(m, [i in t], p[i] >= 0)
     @constraint(m, [i in t], p[i] <= 500)
     @constraint(m, [i in t], t_delta[i] == p_real[i] - p[i])
@@ -49,9 +52,11 @@ function optimise_bidding_quantity(p_real, lambda_DA, up_price, down_price)
 
     @objective(m, Max, sum(lambda_DA[k] * p[k] + up_price[k] * t_up[k] - down_price[k] * t_down[k] for k in t)) 
     optimize!(m)
-    opt_production = JuMP.value.(p)
+    opt_production = JuMP.value.(p) # should this be p_real or p? Thinking p is the forecasted production and p_real is the actual production (incl. up and down regulation)
+    opt_t_up = JuMP.value.(t_up)
+    opt_t_down = JuMP.value.(t_down)
     expected_profit = JuMP.objective_value(m)
-    return opt_production, expected_profit
+    return opt_production, opt_t_up, opt_t_down, expected_profit
 end
 
 
@@ -95,13 +100,46 @@ for i in 1:no_of_scenarios
 
     up_one, down_one, up_two, down_two = compute_prices(lambda_DA_local, system_status_local)
 
-    opt_prod_one, profit_one = optimise_bidding_quantity(p_real_local, lambda_DA_local, up_one, down_one)
-    opt_prod_two, profit_two = optimise_bidding_quantity(p_real_local, lambda_DA_local, up_two, down_two)
+    opt_prod_one, t_up_one, t_down_one, profit_one = optimise_bidding_quantity(p_real_local, lambda_DA_local, up_one, down_one)
+    opt_prod_two, t_up_two, t_down_two, profit_two = optimise_bidding_quantity(p_real_local, lambda_DA_local, up_two, down_two)
+
+    # Convert from JuMP DenseAxisArray to plain Vector
+    opt_prod_one = collect(opt_prod_one)
+    opt_prod_two = collect(opt_prod_two)
+
+    # For DEBUGGING - check up and down regulation
+    t_up_one = max.(p_real_local .- opt_prod_one, 0.0)
+    t_down_one = max.(opt_prod_one .- p_real_local, 0.0)
+
+    t_up_two = max.(p_real_local .- opt_prod_two, 0.0)
+    t_down_two = max.(opt_prod_two .- p_real_local, 0.0)
+
+    # DEBUGGING
+    debug_df = DataFrame(
+        Hour = 1:24,
+        p_real = p_real_local,
+        lambda_DA = lambda_DA_local,
+        system_status = system_status_local,    
+        #up_price_one = up_one,
+        #down_price_one = down_one,
+        #up_price_two = up_two,
+        #down_price_two = down_two,
+        t_up_one = collect(t_up_one),
+        t_down_one = collect(t_down_one),
+        t_up_two = collect(t_up_two),
+        t_down_two = collect(t_down_two),
+        bid_prod_one = collect(opt_prod_one),
+        bid_prod_two = collect(opt_prod_two)
+    )
+
+    println("DEBUG TABLE — Scenario $i")
+    println(debug_df)
+    println("-----------------------------------------")
 
     results_df = DataFrame(
         Hour = 1:24,
-        Opt_Production_OnePrice = collect(opt_prod_one),
-        Opt_Production_TwoPrice = collect(opt_prod_two)
+        Opt_Production_OnePrice = opt_prod_one,
+        Opt_Production_TwoPrice = opt_prod_two
     )
 
     println("Scenario ", i)
