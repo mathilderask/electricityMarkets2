@@ -31,7 +31,7 @@ function scenario_generator(no_of_scenarios)
     return p_real, lambda_DA, system_status
 end
 
-function optimise_bidding_quantity(p_real, lambda_DA, system_status) # later add the input: "pricing_scheme", where it will be either "one-price" or "two-price"
+function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme) # later add the input: "pricing_scheme", where it will be either "one-price" or "two-price"
     m = Model(GLPK.Optimizer)
 
     t = 1:length(p_real)
@@ -55,27 +55,41 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status) # later add
 
     up_price = Vector{Float64}(undef, 24)
     down_price = Vector{Float64}(undef, 24)
-    # One-pricing scheme
+    
+    # Pricing
     for i in t
-        if system_status[i] == 1   # randomly assigned 1 to deficit and 0 to excess here
-            up_price[i] = 1.25 * lambda_DA[i]
-            down_price[i] = 1.25 * lambda_DA[i]
-        elseif system_status[i] == 0 # randomly assigned 1 to deficit and 0 to excess here
-            up_price[i] = 0.85 * lambda_DA[i]
-            down_price[i] = 0.85 * lambda_DA[i]
+        if system_status[i] == 0                    # 0 is deficit
+            if pricing_scheme == "one-price"
+                up_price[i] = 1.25 * lambda_DA[i]
+                down_price[i] = 1.25 * lambda_DA[i]
+            elseif pricing_scheme == "two-price"
+                up_price[i] = 1 * lambda_DA[i]
+                down_price[i] = 1.25 * lambda_DA[i]
+            else
+                println("Error: pricing_scheme must be either 'one-price' or 'two-price'")
+            end
+        elseif system_status[i] == 1                # 1 is excess
+            if pricing_scheme == "one-price"
+                up_price[i] = 0.85 * lambda_DA[i]
+                down_price[i] = 0.85 * lambda_DA[i]
+            elseif pricing_scheme == "two-price"    
+                up_price[i] = 0.85 * lambda_DA[i]
+                down_price[i] = 1 * lambda_DA[i]
+            else
+                println("Error: pricing_scheme must be either 'one-price' or 'two-price'")
+            end
         else
             println("Error: system_status must be either 'deficit' or 'excess'")
         end
     end
 
-    @objective(m, Max, sum(lambda_DA[k]*p[k]+up_price[k]*t_up[k]-down_price[k]*t_down[k] for k in t)) 
+    @objective(m, Max, sum(lambda_DA[k] * p[k] + up_price[k] * t_up[k] - down_price[k] *t_down[k] for k in t)) 
     optimize!(m)
     opt_production = JuMP.value.(p)
     expected_profit = JuMP.objective_value(m)
     return opt_production, expected_profit
     ### we want: optimal hourly proudction quanitity offers, and expected profit
 end
-
 
 # RUN MODEL -------------------------------------------------------------------------------------------
 
@@ -88,9 +102,10 @@ for i in 1:no_of_scenarios
     p_real_local = p_real[:, i]
     lambda_DA_local = lambda_DA[:, i]
     system_status_local = system_status[:, i]
+    pricing_scheme_local = "one-price"              # Select "one-price" or "two-price"
     opt_production, expected_profit = optimise_bidding_quantity(p_real_local, lambda_DA_local, system_status_local)
     opt_production_DF = DataFrame(Hour = 1:24, Opt_Production = collect(opt_production))
-    println("Scenario ", i, ", Optimal production quantity:")
+    println("Scenario ", i, " under Pricing Scheme: ", pricing_scheme_local, ", Optimal production quantity: ")
     println(opt_production_DF)
-    println("Scenario ", i, ", Expected profit: ", expected_profit)
+    println("Scenario ", i, " under Pricing Scheme: ", pricing_scheme_local, ", Expected profit: ", expected_profit)
 end
