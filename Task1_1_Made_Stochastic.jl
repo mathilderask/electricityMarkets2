@@ -86,17 +86,18 @@ production_values = collect(opt_production)
 using PyPlot
 
 hours = 1:24
+production_values = values(opt_production)
+
 figure(figsize=(10, 5))
 bar(hours, production_values, width=0.8)
 for (h, p) in zip(hours, production_values)
     if p == 0.0
-        scatter(h, 0.5, color="blue", marker="o", s=20) 
-        # marker at small height (e.g., y=0.5) so it's visible
+        scatter(h, 5, color="blue", marker="o", s=20) 
     end
 end
 xlabel("Hour of the Day")
 ylabel("Offered Production (MW)")
-title("Optimal Day-Ahead Production Offers for one price scheme")
+title("Optimal Day-Ahead Production Offers for One-Price Scheme")
 grid(true, axis="y")
 xticks(hours)
 tight_layout()

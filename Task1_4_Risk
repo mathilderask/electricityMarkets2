@@ -1,0 +1,124 @@
+import Pkg, JuMP, GLPK, DataFrames, CSV, Random
+using Pkg, JuMP, GLPK, DataFrames, CSV, Random
+
+p_real_DF = CSV.read("windscenarios_zone2.csv", DataFrame;  delim=',', header=true)
+lambda_DA_DF = CSV.read("DA_hourly_price_scenarios.csv", DataFrame;  delim=',', header=true)
+scenarios_DF = CSV.read("scenario_combinations.csv", DataFrame; delim=',', header=true)
+system_status_DF = CSV.read("power_system_conditions.csv", DataFrame; delim=',', header=true)
+
+scenario_ID = scenarios_DF[:, 1]
+
+function scenario_generator(no_of_scenarios)
+    Random.seed!(8)
+    scenarios_indices = randperm(length(scenario_ID))[1:no_of_scenarios]
+    p_real_indices = scenarios_DF[scenarios_indices, 2]
+    lambda_DA_indices = scenarios_DF[scenarios_indices, 3]
+    system_status_indices = scenarios_DF[scenarios_indices, 4]
+
+    p_real_cols = [p_real_DF[:, i+1] for i in p_real_indices]
+    col_names = Symbol.("selected_scenario_", 1:length(p_real_cols))
+    p_real = DataFrame(p_real_cols, col_names)
+
+    lambda_DA_cols = [lambda_DA_DF[:, i+1] for i in lambda_DA_indices]
+    lambda_DA = DataFrame(lambda_DA_cols, col_names)
+
+    system_status_cols = [system_status_DF[:, i+1] for i in system_status_indices]
+    system_status = DataFrame(system_status_cols, col_names)
+
+    return Matrix(p_real), Matrix(lambda_DA), Matrix(system_status)
+end
+
+function optimise_bidding_quantity(
+    p_real, lambda_DA, system_status; 
+    alpha=0.9, beta=0.0, pricing_scheme="one-price"
+)
+    m = Model(GLPK.Optimizer)
+
+    T = 1:size(p_real, 1) # 24 hours
+    S = 1:size(p_real, 2) # number of scenarios
+    π = fill(1/length(S), length(S)) # equal scenario probabilities
+
+    # Variables
+    @variable(m, p[T])
+    @variable(m, t_up[T, S] >= 0)
+    @variable(m, t_down[T, S] >= 0)
+    @variable(m, t_delta[T, S])
+    @variable(m, ζ)
+    @variable(m, η[S] >= 0)
+
+    # Constraints
+    @constraint(m, [t in T], 0 <= p[t] <= 500)
+    @constraint(m, [s in S, t in T], t_delta[t, s] == p_real[t, s] - p[t])
+    @constraint(m, [s in S, t in T], t_delta[t, s] == t_up[t, s] - t_down[t, s])
+
+    # Balancing prices
+    if pricing_scheme == "one-price"
+        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+        down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+    elseif pricing_scheme == "two-price"
+        up_price = [1.25 * lambda_DA[t, s] for t in T, s in S]
+        down_price = [0.85 * lambda_DA[t, s] for t in T, s in S]
+    else
+        error("Unknown pricing scheme: $pricing_scheme")
+    end
+
+    # Profit per scenario
+    @expression(m, Profit[s in S], sum(
+        lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
+        for t in T
+    ))
+
+    # CVaR constraints
+    @constraint(m, [s in S], η[s] >= ζ - Profit[s])
+    @constraint(m, [s in S], η[s] >= 0)
+
+    # Objective
+    @objective(m, Max, 
+        (1 - beta) * sum(π[s] * Profit[s] for s in S) +
+        beta * (ζ - (1/(1 - alpha)) * sum(π[s] * η[s] for s in S))
+    )
+
+    optimize!(m)
+
+    opt_production = JuMP.value.(p)
+    expected_profit = sum(π[s] * JuMP.value(Profit[s]) for s in S)
+    cvar_value = JuMP.value(ζ) - (1/(1-alpha)) * sum(π[s] * JuMP.value(η[s]) for s in S)
+
+    return opt_production, expected_profit, cvar_value
+end
+
+# Scenario generation
+no_of_scenarios = 5
+p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
+
+# β loop
+β_values = 0:0.1:1
+profit_one = Float64[]
+cvar_one = Float64[]
+
+profit_two = Float64[]
+cvar_two = Float64[]
+
+for β in β_values
+    _, exp_profit_one, cvar_val_one = optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha=0.9, beta=β, pricing_scheme="one-price")
+    push!(profit_one, exp_profit_one)
+    push!(cvar_one, cvar_val_one)
+
+    _, exp_profit_two, cvar_val_two = optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha=0.9, beta=β, pricing_scheme="two-price")
+    push!(profit_two, exp_profit_two)
+    push!(cvar_two, cvar_val_two)
+end
+
+# Plotting
+figure(figsize=(10,6))
+plot(cvar_one, profit_one, "o-", label="One-Price Market")
+plot(cvar_two, profit_two, "s-", label="Two-Price Market")
+xlabel("Conditional Value at Risk (CVaR)")
+ylabel("Expected Profit (€)")
+title("Risk-Averse Offering Strategy: Expected Profit vs CVaR")
+legend()
+grid(true)
+tight_layout()
+show()
+display(gcf())
+sleep(10)  # <<< Wait 10 seconds to see the figure
