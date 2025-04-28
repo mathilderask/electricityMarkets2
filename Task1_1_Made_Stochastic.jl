@@ -35,7 +35,7 @@ function scenario_generator(no_of_scenarios)
     return p_real_matrix, lambda_DA_matrix, system_status_matrix
 end
 
-function optimise_bidding_quantity(p_real, lambda_DA, system_status) # later add the input: "pricing_scheme", where it will be either "one-price" or "two-price"
+function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme) # later add the input: "pricing_scheme", where it will be either "one-price" or "two-price"
 # now these inputs are data frames with all the scenarios as columns and hours as rows
 # this is to enable stochastic modelling
 m = Model(GLPK.Optimizer)
@@ -55,11 +55,15 @@ m = Model(GLPK.Optimizer)
 
     # One-pricing scheme
     # Generate balancing prices per scenario
-    up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-    # Generate balancing prices per scenario
-    down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-
-
+    if pricing_scheme == "one-price"
+        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+        down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+    elseif pricing_scheme == "two-price"
+        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1 * lambda_DA[t, s] for t in T, s in S]
+        down_price = [system_status[t, s] == 1 ? 1 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+    else
+        error("Invalid pricing scheme. Use 'one-price' or 'two-price'.")
+    end
     @objective(m, Max,sum(
             lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
             for s in S, t in T
@@ -71,10 +75,10 @@ m = Model(GLPK.Optimizer)
     return opt_production, expected_profit
 end
 
-no_of_scenarios = 3
+no_of_scenarios = 10
 p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
 
-opt_production, expected_profit = optimise_bidding_quantity(p_real, lambda_DA, system_status)
+opt_production, expected_profit = optimise_bidding_quantity(p_real, lambda_DA, system_status, "one-price")
 println( "Optimal production quantity: ", opt_production)
 println("Expected cumulative profit: ", expected_profit)
 production_values = collect(opt_production)
@@ -93,6 +97,29 @@ end
 xlabel("Hour of the Day")
 ylabel("Offered Production (MW)")
 title("Optimal Day-Ahead Production Offers for one price scheme")
+grid(true, axis="y")
+xticks(hours)
+tight_layout()
+show()
+
+opt_production_twoprice, expected_profit_twoprice = optimise_bidding_quantity(p_real, lambda_DA, system_status, "two-price")
+println( "Optimal production quantity: ", opt_production_twoprice)
+println("Expected cumulative profit: ", expected_profit_twoprice)
+production_values = collect(opt_production_twoprice)
+
+
+hours = 1:24
+figure(figsize=(10, 5))
+bar(hours, production_values, width=0.8)
+for (h, p) in zip(hours, production_values)
+    if p == 0.0
+        scatter(h, 0.5, color="blue", marker="o", s=20) 
+        # marker at small height (e.g., y=0.5) so it's visible
+    end
+end
+xlabel("Hour of the Day")
+ylabel("Offered Production (MW)")
+title("Optimal Day-Ahead Production Offers for two price scheme")
 grid(true, axis="y")
 xticks(hours)
 tight_layout()
