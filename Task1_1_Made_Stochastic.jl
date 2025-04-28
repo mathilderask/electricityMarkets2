@@ -1,5 +1,5 @@
-import Pkg, JuMP, GLPK, DataFrames, CSV, Plots, Random
-using Pkg, JuMP, GLPK, DataFrames, CSV, Plots, Random
+import Pkg, JuMP, GLPK, DataFrames, CSV, Random
+using Pkg, JuMP, GLPK, DataFrames, CSV, Random
 
 p_real_DF = CSV.read("windscenarios_zone2.csv", DataFrame;  delim=',', header=true)
 lambda_DA_DF = CSV.read("DA_hourly_price_scenarios.csv", DataFrame;  delim=',', header=true)
@@ -7,7 +7,7 @@ scenarios_DF = CSV.read("scenario_combinations.csv", DataFrame; delim=',', heade
 system_status_DF = CSV.read("power_system_conditions.csv", DataFrame; delim=',', header=true)
 
 scenario_ID = scenarios_DF[:, 1]
-
+Random.seed!(8) #Makes the random number generation reproducible
 
 function scenario_generator(no_of_scenarios)
 #### Returns a random selection of defined number of scenarios in.
@@ -53,8 +53,6 @@ m = Model(GLPK.Optimizer)
     @constraint(m, [s in S, t in T], t_delta[t, s] == p_real[t, s] - p[t])
     @constraint(m, [s in S, t in T], t_delta[t, s] == t_up[t, s] - t_down[t, s])
 
-    up_price = Vector{Float64}(24, undef)
-    down_price = Vector{Float64}(24, undef)
     # One-pricing scheme
     # Generate balancing prices per scenario
     up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
@@ -79,14 +77,23 @@ p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
 opt_production, expected_profit = optimise_bidding_quantity(p_real, lambda_DA, system_status)
 println( "Optimal production quantity: ", opt_production)
 println("Expected cumulative profit: ", expected_profit)
+production_values = collect(opt_production)
+
+using PyPlot
 
 hours = 1:24
 figure(figsize=(10, 5))
-plot(hours, opt_production, "o-", linewidth=2, markersize=6)
+bar(hours, production_values, width=0.8)
+for (h, p) in zip(hours, production_values)
+    if p == 0.0
+        scatter(h, 0.5, color="blue", marker="o", s=20) 
+        # marker at small height (e.g., y=0.5) so it's visible
+    end
+end
 xlabel("Hour of the Day")
 ylabel("Offered Production (MW)")
-title("Optimal Day-Ahead Production Offers")
-grid(true)
+title("Optimal Day-Ahead Production Offers for one price scheme")
+grid(true, axis="y")
 xticks(hours)
 tight_layout()
 show()
