@@ -28,17 +28,16 @@ function scenario_generator(no_of_scenarios)
     system_status_cols = [system_status_DF[:, i+1] for i in system_status_indices]
     system_status = DataFrame(system_status_cols, col_names)
 
-    p_real_matrix = Matrix(p_real)
+    p_real_matrix = Matrix(p_real) * 500 # scale for 500MW wind farm
     lambda_DA_matrix = Matrix(lambda_DA)
     system_status_matrix = Matrix(system_status)
-    
     return p_real_matrix, lambda_DA_matrix, system_status_matrix
 end
 
 function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme) # later add the input: "pricing_scheme", where it will be either "one-price" or "two-price"
 # now these inputs are data frames with all the scenarios as columns and hours as rows
 # this is to enable stochastic modelling
-m = Model(GLPK.Optimizer)
+    m = Model(GLPK.Optimizer)
 
     T = 1:size(p_real, 1) # hours
     S = 1:size(p_real, 2)  # scenarios
@@ -50,8 +49,8 @@ m = Model(GLPK.Optimizer)
 
     @constraint(m, [t in T], p[t] >= 0)
     @constraint(m, [t in T], p[t] <= 500)
-    @constraint(m, [s in S, t in T], t_delta[t, s] == p_real[t, s] - p[t])
-    @constraint(m, [s in S, t in T], t_delta[t, s] == t_up[t, s] - t_down[t, s])
+    @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
+    @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
 
     # One-pricing scheme
     # Generate balancing prices per scenario
@@ -64,12 +63,18 @@ m = Model(GLPK.Optimizer)
     else
         error("Invalid pricing scheme. Use 'one-price' or 'two-price'.")
     end
-    @objective(m, Max,sum(
+    @objective(m, Max, sum(
             lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
-            for s in S, t in T
+            for  t in T, s in S
         )
     )
     optimize!(m)
+    println(value.(t_up))
+    println(value.(t_down))
+    println(value.(t_delta))
+    println(p_real)
+    
+    #println(down_price)
     opt_production = JuMP.value.(p)
     expected_profit = JuMP.objective_value(m)
     return opt_production, expected_profit
