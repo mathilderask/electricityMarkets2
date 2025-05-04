@@ -1,5 +1,7 @@
-import Pkg, JuMP, GLPK, DataFrames, CSV, Random
-using Pkg, JuMP, GLPK, DataFrames, CSV, Random
+import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
+using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
+
+#Pkg.add("HiGHS")
 
 p_real_DF = CSV.read("windscenarios_zone2.csv", DataFrame;  delim=',', header=true)
 lambda_DA_DF = CSV.read("DA_hourly_price_scenarios.csv", DataFrame;  delim=',', header=true)
@@ -18,6 +20,7 @@ function scenario_generator(no_of_scenarios)
     lambda_DA_indices = scenarios_DF[scenarios_indices, 3]
     system_status_indices = scenarios_DF[scenarios_indices, 4]
 
+    # need it in dataframe format because otherwise it freaks out about indexing with duplicates
     p_real_cols = [p_real_DF[:, i+1] for i in p_real_indices]
     col_names = Symbol.("selected_scenario_", 1:length(p_real_cols))  # custom unique names
     p_real = DataFrame(p_real_cols, col_names)
@@ -37,21 +40,18 @@ end
 function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme) # later add the input: "pricing_scheme", where it will be either "one-price" or "two-price"
 # now these inputs are data frames with all the scenarios as columns and hours as rows
 # this is to enable stochastic modelling
-    m = Model(GLPK.Optimizer)
+    m = Model(HiGHS.Optimizer)
 
     T = 1:size(p_real, 1) # hours
     S = 1:size(p_real, 2)  # scenarios
 
-    @variable(m, p[T])
+    @variable(m, 0 <= p[T] <= 500)
     @variable(m, t_up[T, S] >= 0)
     @variable(m, t_down[T, S] >= 0)
     @variable(m, t_delta[T, S])
 
-    @constraint(m, [t in T], p[t] >= 0)
-    @constraint(m, [t in T], p[t] <= 500)
     @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
     @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
-    @constraint(m, [t in T, s in S], t_up[t, s] >= 0)
 
     @variable(m, z[T, S], Bin)  # binary variable to switch between up and down regulation
 
@@ -75,12 +75,6 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
         )
     )
     optimize!(m)
-    #println(value.(t_up))
-    #println(value.(t_down))
-    #println(value.(t_delta))
-    #println(p_real)
-    
-    #println(down_price)
     opt_production = JuMP.value.(p)
     expected_profit = JuMP.objective_value(m)
     return opt_production, expected_profit
