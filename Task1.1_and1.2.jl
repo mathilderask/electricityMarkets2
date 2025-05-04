@@ -51,7 +51,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
     @variable(m, z[T, S], Bin)  # binary variable to switch between up and down regulation
 
     @constraint(m, [t in T], p[t] >= 0)
-    @constraint(m, [t in T], p[t] <= 500)
+    @constraint(m, [t in T], p[t] <= capacity)
     @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
     @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
     @constraint(m, [t in T, s in S], t_up[t, s] >= 0)
