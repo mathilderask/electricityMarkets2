@@ -28,7 +28,8 @@ function scenario_generator(no_of_scenarios)
     system_status_cols = [system_status_DF[:, i+1] for i in system_status_indices]
     system_status = DataFrame(system_status_cols, col_names)
 
-    p_real_matrix = Matrix(p_real) * 500 # scale for 500MW wind farm
+    global capacity = 500 # Installed capacity in MW
+    p_real_matrix = Matrix(p_real) * capacity # scale for 500MW wind farm
     lambda_DA_matrix = Matrix(lambda_DA)
     system_status_matrix = Matrix(system_status)
     return p_real_matrix, lambda_DA_matrix, system_status_matrix
@@ -39,6 +40,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
 # this is to enable stochastic modelling
     m = Model(GLPK.Optimizer)
 
+
     T = 1:size(p_real, 1) # hours
     S = 1:size(p_real, 2)  # scenarios
 
@@ -46,17 +48,15 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
     @variable(m, t_up[T, S] >= 0)
     @variable(m, t_down[T, S] >= 0)
     @variable(m, t_delta[T, S])
+    @variable(m, z[T, S], Bin)  # binary variable to switch between up and down regulation
 
     @constraint(m, [t in T], p[t] >= 0)
-    @constraint(m, [t in T], p[t] <= 500)
+    @constraint(m, [t in T], p[t] <= capacity)
     @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
     @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
     @constraint(m, [t in T, s in S], t_up[t, s] >= 0)
-
-    @variable(m, z[T, S], Bin)  # binary variable to switch between up and down regulation
-
-    @constraint(m, [t in T, s in S], t_up[t, s] <= 500 * z[t, s]) # make max production a variable instead of 500
-    @constraint(m, [t in T, s in S], t_down[t, s] <= 500 * (1 - z[t, s]))
+    @constraint(m, [t in T, s in S], t_up[t, s] <= capacity * z[t, s]) 
+    @constraint(m, [t in T, s in S], t_down[t, s] <= capacity * (1 - z[t, s]))
 
     # One-pricing scheme
     # Generate balancing prices per scenario
@@ -75,12 +75,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
         )
     )
     optimize!(m)
-    #println(value.(t_up))
-    #println(value.(t_down))
-    #println(value.(t_delta))
-    #println(p_real)
-    
-    #println(down_price)
+
     opt_production = JuMP.value.(p)
     expected_profit = JuMP.objective_value(m)
     return opt_production, expected_profit

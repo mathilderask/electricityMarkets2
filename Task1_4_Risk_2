@@ -28,7 +28,10 @@ function scenario_generator(no_of_scenarios)
     system_status_cols = [system_status_DF[:, i+1] for i in system_status_indices]
     system_status = DataFrame(system_status_cols, col_names)
 
-    p_real_matrix = Matrix(p_real) * 500 # scale for 500MW wind farm
+    global capacity = 500 # Installed capacity in MW
+    global alpha = 0.9 # risk aversion parameter
+    global beta = 0.0 # risk aversion parameter
+    p_real_matrix = Matrix(p_real) * capacity # scale for 500MW wind farm
     lambda_DA_matrix = Matrix(lambda_DA)
     system_status_matrix = Matrix(system_status)
     return p_real_matrix, lambda_DA_matrix, system_status_matrix
@@ -39,6 +42,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
 # this is to enable stochastic modelling
     m = Model(GLPK.Optimizer)
 
+
     T = 1:size(p_real, 1) # hours
     S = 1:size(p_real, 2)  # scenarios
 
@@ -46,17 +50,15 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
     @variable(m, t_up[T, S] >= 0)
     @variable(m, t_down[T, S] >= 0)
     @variable(m, t_delta[T, S])
+    @variable(m, z[T, S], Bin)  # binary variable to switch between up and down regulation
 
     @constraint(m, [t in T], p[t] >= 0)
     @constraint(m, [t in T], p[t] <= 500)
     @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
     @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
     @constraint(m, [t in T, s in S], t_up[t, s] >= 0)
-
-    @variable(m, z[T, S], Bin)  # binary variable to switch between up and down regulation
-
-    @constraint(m, [t in T, s in S], t_up[t, s] <= 500 * z[t, s]) # make max production a variable instead of 500
-    @constraint(m, [t in T, s in S], t_down[t, s] <= 500 * (1 - z[t, s]))
+    @constraint(m, [t in T, s in S], t_up[t, s] <= capacity * z[t, s]) 
+    @constraint(m, [t in T, s in S], t_down[t, s] <= capacity * (1 - z[t, s]))
 
     # One-pricing scheme
     # Generate balancing prices per scenario
@@ -75,12 +77,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
         )
     )
     optimize!(m)
-    #println(value.(t_up))
-    #println(value.(t_down))
-    #println(value.(t_delta))
-    #println(p_real)
-    
-    #println(down_price)
+
     opt_production = JuMP.value.(p)
     expected_profit = JuMP.objective_value(m)
     return opt_production, expected_profit
@@ -136,3 +133,65 @@ grid(true, axis="y")
 xticks(hours)
 tight_layout()
 show()
+
+
+
+
+
+
+function optimise_bidding_quantity_risk_averse(p_real, lambda_DA, system_status, pricing_scheme, alpha, beta)
+    m = Model(GLPK.Optimizer)
+
+    T = 1:size(p_real, 1)
+    S = 1:size(p_real, 2)
+    W = length(S)
+
+    @variable(m, p[T])
+    @variable(m, t_up[T, S] >= 0)
+    @variable(m, t_down[T, S] >= 0)
+    @variable(m, t_delta[T, S])
+    @variable(m, z[T, S], Bin)
+    @variable(m, zeta >= 0)  # CVaR threshold
+    @variable(m, eta[S] >= 0)  # auxiliary variables for CVaR
+
+    @constraint(m, [t in T], p[t] >= 0)
+    @constraint(m, [t in T], p[t] <= 500)
+    @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
+    @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
+    @constraint(m, [t in T, s in S], t_up[t, s] >= 0)
+    @constraint(m, [t in T, s in S], t_up[t, s] <= capacity * z[t, s])
+    @constraint(m, [t in T, s in S], t_down[t, s] <= capacity * (1 - z[t, s]))
+
+    # Define prices
+    if pricing_scheme == "one-price"
+        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+        down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+    elseif pricing_scheme == "two-price"
+        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1 * lambda_DA[t, s] for t in T, s in S]
+        down_price = [system_status[t, s] == 1 ? 1 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+    else
+        error("Invalid pricing scheme. Use 'one-price' or 'two-price'.")
+    end
+
+    @expression(m, profit[s in S], sum(lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s] for t in T))
+    @constraint(m, [s in S], eta[s] >= zeta - profit[s])
+
+    @objective(m, Max, (1 / W) * sum(profit[s] for s in S) - beta * (zeta + (1 / ((1 - alpha) * W)) * sum(eta[s] for s in S)))
+
+    optimize!(m)
+
+    opt_production = JuMP.value.(p)
+    expected_profit = mean(JuMP.value.(profit))
+    profit_distribution = JuMP.value.(profit)
+    CVaR_value = JuMP.value(zeta) + (1 / ((1 - alpha) * W)) * sum(JuMP.value.(ν))
+
+    return opt_production, expected_profit, profit_distribution, CVaR_value
+end
+
+function save_profit_distribution(profit_dict::Dict, filename::String)
+    df = DataFrame()
+    for (beta, profits) in profit_dict
+        df[!, Symbol("β=$(β)")] = profits
+    end
+    CSV.write(filename, df)
+end
