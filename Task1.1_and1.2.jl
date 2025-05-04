@@ -136,3 +136,5 @@ grid(true, axis="y")
 xticks(hours)
 tight_layout()
 show()
+display(gcf())
+sleep(10)  # <<< Wait 10 seconds to see the figure

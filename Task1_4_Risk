@@ -30,7 +30,7 @@ end
 
 function optimise_bidding_quantity(
     p_real, lambda_DA, system_status;
-    alpha=0.9, beta=0.0, pricing_scheme="one-price"
+    alpha=0.9, beta=0.0, pricing_scheme
 )
     m = Model(GLPK.Optimizer)
 
@@ -70,9 +70,9 @@ function optimise_bidding_quantity(
         lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
         for t in T
     ))
-
+    
+    
     @constraint(m, [s in S], eta[s] >= zeta - Profit[s])
-    println(eta[s])
 
     @objective(m, Max,
         (1 - beta) * sum(Profit[s] for s in S) +
@@ -84,17 +84,33 @@ function optimise_bidding_quantity(
     opt_production = JuMP.value.(p)
     expected_profit = sum(JuMP.value(Profit[s]) for s in S)
     cvar_value = JuMP.value(zeta) - (1 / (1 - alpha)) * sum(JuMP.value(eta[s]) for s in S)
+    
+    # Print individual scenario profits
+    scenario_profits = [JuMP.value(Profit[s]) for s in S]
 
-    return opt_production, expected_profit, cvar_value
+    return opt_production, expected_profit, cvar_value, scenario_profits
 end
 
 
+
 # Scenario generation
-no_of_scenarios = 5
+no_of_scenarios = 20
 p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
 
+opt_production, expected_profit, cvar_value, scenario_profits = optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme="one-price")
+println( "Optimal production quantity: ", opt_production)
+println("Expected cumulative profit: ", expected_profit)
+println("cvar value: ", cvar_value)
+production_values = collect(opt_production)
+
+for (i, profit) in enumerate(scenario_profits)
+    println("Profit[$i] = ", profit)
+end
+
+
+using PyPlot
+
 # β loop
-"""
 β_values = 0:0.1:1
 profit_one = Float64[]
 cvar_one = Float64[]
@@ -111,7 +127,7 @@ for β in β_values
     push!(profit_two, exp_profit_two)
     push!(cvar_two, cvar_val_two)
 end
-"""
+
 
 # Plotting
 figure(figsize=(10,6))
@@ -125,4 +141,4 @@ grid(true)
 tight_layout()
 show()
 display(gcf())
-sleep(10)  # <<< Wait 10 seconds to see the figurejj
+sleep(10)  # <<< Wait 10 seconds to see the figure
