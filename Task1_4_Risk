@@ -29,67 +29,86 @@ function scenario_generator(no_of_scenarios)
 end
 
 function optimise_bidding_quantity(
-    p_real, lambda_DA, system_status; 
-    alpha=0.9, beta=0.0, pricing_scheme="one-price"
+    p_real, lambda_DA, system_status;
+    alpha=0.9, beta=0.0, pricing_scheme
 )
     m = Model(GLPK.Optimizer)
 
-    T = 1:size(p_real, 1) # 24 hours
-    S = 1:size(p_real, 2) # number of scenarios
-    π = fill(1/length(S), length(S)) # equal scenario probabilities
+    T = 1:size(p_real, 1)  # hours
+    S = 1:size(p_real, 2)  # scenarios
+    #pi = fill(1 / length(S), length(S))  # equal scenario probabilities
 
-    # Variables
     @variable(m, p[T])
     @variable(m, t_up[T, S] >= 0)
     @variable(m, t_down[T, S] >= 0)
     @variable(m, t_delta[T, S])
-    @variable(m, ζ)
-    @variable(m, η[S] >= 0)
+    @variable(m, zeta)
+    @variable(m, eta[S] >= 0)
+    @variable(m, z[T, S], Bin)
 
-    # Constraints
-    @constraint(m, [t in T], 0 <= p[t] <= 500)
-    @constraint(m, [s in S, t in T], t_delta[t, s] == p_real[t, s] - p[t])
-    @constraint(m, [s in S, t in T], t_delta[t, s] == t_up[t, s] - t_down[t, s])
+    @constraint(m, [t in T], p[t] >= 0)
+    @constraint(m, [t in T], p[t] <= 500)
 
-    # Balancing prices
+    @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
+    @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
+    @constraint(m, [t in T, s in S], t_up[t, s] <= 500 * z[t, s])
+    @constraint(m, [t in T, s in S], t_down[t, s] <= 500 * (1 - z[t, s]))
+
+    # Pricing scheme
     if pricing_scheme == "one-price"
         up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-        down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+        down_price = up_price
     elseif pricing_scheme == "two-price"
-        up_price = [1.25 * lambda_DA[t, s] for t in T, s in S]
-        down_price = [0.85 * lambda_DA[t, s] for t in T, s in S]
+        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.00 * lambda_DA[t, s] for t in T, s in S]
+        down_price = [system_status[t, s] == 1 ? 1.00 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
     else
-        error("Unknown pricing scheme: $pricing_scheme")
+        error("Invalid pricing scheme. Use 'one-price' or 'two-price'.")
     end
 
-    # Profit per scenario
+    # Define profit per scenario
     @expression(m, Profit[s in S], sum(
         lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
         for t in T
     ))
+    
+    
+    @constraint(m, [s in S], eta[s] >= zeta - Profit[s])
 
-    # CVaR constraints
-    @constraint(m, [s in S], η[s] >= ζ - Profit[s])
-    @constraint(m, [s in S], η[s] >= 0)
-
-    # Objective
-    @objective(m, Max, 
-        (1 - beta) * sum(π[s] * Profit[s] for s in S) +
-        beta * (ζ - (1/(1 - alpha)) * sum(π[s] * η[s] for s in S))
+    @objective(m, Max,
+        (1 - beta) * sum(Profit[s] for s in S) +
+        beta * (zeta - (1 / (1 - alpha)) * sum(eta[s] for s in S))
     )
 
     optimize!(m)
 
     opt_production = JuMP.value.(p)
-    expected_profit = sum(π[s] * JuMP.value(Profit[s]) for s in S)
-    cvar_value = JuMP.value(ζ) - (1/(1-alpha)) * sum(π[s] * JuMP.value(η[s]) for s in S)
+    expected_profit = sum(JuMP.value(Profit[s]) for s in S)
+    cvar_value = JuMP.value(zeta) - (1 / (1 - alpha)) * sum(JuMP.value(eta[s]) for s in S)
+    
+    # Print individual scenario profits
+    scenario_profits = [JuMP.value(Profit[s]) for s in S]
 
-    return opt_production, expected_profit, cvar_value
+    return opt_production, expected_profit, cvar_value, scenario_profits
 end
 
+
+
 # Scenario generation
-no_of_scenarios = 5
+no_of_scenarios = 20
 p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
+
+opt_production, expected_profit, cvar_value, scenario_profits = optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme="one-price")
+println( "Optimal production quantity: ", opt_production)
+println("Expected cumulative profit: ", expected_profit)
+println("cvar value: ", cvar_value)
+production_values = collect(opt_production)
+
+for (i, profit) in enumerate(scenario_profits)
+    println("Profit[$i] = ", profit)
+end
+
+
+using PyPlot
 
 # β loop
 β_values = 0:0.1:1
@@ -108,6 +127,7 @@ for β in β_values
     push!(profit_two, exp_profit_two)
     push!(cvar_two, cvar_val_two)
 end
+
 
 # Plotting
 figure(figsize=(10,6))
