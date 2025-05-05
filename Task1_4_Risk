@@ -1,6 +1,7 @@
 import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
 using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
 
+
 p_real_DF = CSV.read("windscenarios_zone2.csv", DataFrame;  delim=',', header=true)
 lambda_DA_DF = CSV.read("DA_hourly_price_scenarios.csv", DataFrame;  delim=',', header=true)
 scenarios_DF = CSV.read("scenario_combinations.csv", DataFrame; delim=',', header=true)
@@ -34,10 +35,11 @@ function optimise_bidding_quantity(
 )
     m = Model(HiGHS.Optimizer)
     set_silent(m)
+    #set_silent(m)
 
     T = 1:size(p_real, 1)  # hours
     S = 1:size(p_real, 2)  # scenarios
-    #pi = fill(1 / length(S), length(S))  # equal scenario probabilities
+    pi = fill(1 / length(S), length(S))  # equal scenario probabilities
 
     @variable(m, p[T])
     @variable(m, t_up[T, S] >= 0)
@@ -76,9 +78,9 @@ function optimise_bidding_quantity(
     @constraint(m, [s in S], eta[s] >= zeta - Profit[s])
 
     @objective(m, Max,
-        (1 - beta) * sum(Profit[s] for s in S) +
-        beta * (zeta - (1 / (1 - alpha)) * sum(eta[s] for s in S))
-    )
+    (1 - beta) * sum(pi[s] * Profit[s] for s in S) +
+    beta * (zeta - (1 / (1 - alpha)) * sum(pi[s] * eta[s] for s in S))
+)
 
     optimize!(m)
 
@@ -95,7 +97,7 @@ end
 
 
 # Scenario generation
-no_of_scenarios = 10
+no_of_scenarios = 20
 p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
 
 opt_production, expected_profit, cvar_value, scenario_profits = optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme="one-price")
