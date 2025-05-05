@@ -30,7 +30,7 @@ function scenario_generator(no_of_scenarios)
 
     global capacity = 500 # Installed capacity in MW
     global alpha = 0.9 # risk aversion parameter
-    global beta = 0.0 # risk aversion parameter
+    global beta = 0.2 # risk aversion parameter
     p_real_matrix = Matrix(p_real) * capacity # scale for 500MW wind farm
     lambda_DA_matrix = Matrix(lambda_DA)
     system_status_matrix = Matrix(system_status)
