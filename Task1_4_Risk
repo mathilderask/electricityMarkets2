@@ -1,5 +1,5 @@
-import Pkg, JuMP, GLPK, DataFrames, CSV, Random
-using Pkg, JuMP, GLPK, DataFrames, CSV, Random
+import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
+using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
 
 p_real_DF = CSV.read("windscenarios_zone2.csv", DataFrame;  delim=',', header=true)
 lambda_DA_DF = CSV.read("DA_hourly_price_scenarios.csv", DataFrame;  delim=',', header=true)
@@ -32,7 +32,8 @@ function optimise_bidding_quantity(
     p_real, lambda_DA, system_status;
     alpha=0.9, beta=0.0, pricing_scheme
 )
-    m = Model(GLPK.Optimizer)
+    m = Model(HiGHS.Optimizer)
+    set_silent(m)
 
     T = 1:size(p_real, 1)  # hours
     S = 1:size(p_real, 2)  # scenarios
@@ -94,11 +95,11 @@ end
 
 
 # Scenario generation
-no_of_scenarios = 20
+no_of_scenarios = 10
 p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
 
 opt_production, expected_profit, cvar_value, scenario_profits = optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme="one-price")
-println( "Optimal production quantity: ", opt_production)
+println("Optimal production quantity: ", opt_production)
 println("Expected cumulative profit: ", expected_profit)
 println("cvar value: ", cvar_value)
 production_values = collect(opt_production)
@@ -111,7 +112,7 @@ end
 using PyPlot
 
 # β loop
-β_values = 0:0.1:1
+β_values = collect(0.0:0.1:1.0)
 profit_one = Float64[]
 cvar_one = Float64[]
 
