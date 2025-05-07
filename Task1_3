@@ -13,6 +13,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
     # now these inputs are data frames with all the scenarios as columns and hours as rows
     # this is to enable stochastic modelling
         m = Model(HiGHS.Optimizer)
+        set_silent(m) # suppress output from the solver
     
         T = 1:size(p_real, 1) # hours
         S = 1:size(p_real, 2)  # scenarios
@@ -52,7 +53,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
         optimize!(m)
         opt_production = JuMP.value.(p)
         expected_profit = JuMP.objective_value(m)
-        println("Expected profit: ", expected_profit)
+        println("Expected profit in sample: ", expected_profit)
         println("Optimal production: ", opt_production)
         return opt_production, expected_profit
     end
@@ -74,7 +75,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
         end
         expected_profit = sum(lambda_DA[t, s] * p_opt[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
                               for t in T, s in S)
-        println("Expected profit: ", expected_profit)
+        println("Expected profit out sample: ", expected_profit)
         return expected_profit
     end
 
@@ -141,11 +142,32 @@ end
 
 
 
+prof_in_sample_400_1price , prof_out_sample_1200_1price = cross_validation(400, "one-price")
+prof_in_sample_200_1price , prof_out_sample_1400_1price = cross_validation(200, "one-price")
+prof_in_sample_100_1price , prof_out_sample_1500_1price = cross_validation(100, "one-price")
+prof_in_sample_20_1price , prof_out_sample_1580_1price = cross_validation(20, "one-price")
 
+Out_sample_profit = [prof_out_sample_1580_1price, prof_out_sample_1500_1price, prof_out_sample_1400_1price, prof_out_sample_1200_1price]
+In_sample_profit = [prof_in_sample_20_1price, prof_in_sample_100_1price, prof_in_sample_200_1price, prof_in_sample_400_1price]
+Sample_size = [20, 100, 200, 400]
 
+#println("In-sample average profit: ", avg_prof_in_sample)
+#println("Out-of-sample average profit: ", avg_prof_out_sample)
 
-avg_prof_in_sample , avg_prof_out_sample = cross_validation(40, "one-price")
-println("In-sample average profit: ", avg_prof_in_sample)
-println("Out-of-sample average profit: ", avg_prof_out_sample)
+# Convert category labels to positions
 
+using PyPlot
+# Create bar plot with grouped bars
+figure(figsize=(8, 5))
 
+plot(Sample_size, In_sample_profit, marker="o", label="In-sample profit", linewidth=2)
+plot(Sample_size, Out_sample_profit, marker="s", label="Out-of-sample profit", linewidth=2)
+
+# Labels and formatting
+xlabel("Number of In-sample Scenarios")
+ylabel("Expected Profit")
+title("In- vs Out-of-Sample Profit (One-Price Scheme)")
+legend()
+grid(true)
+tight_layout()
+show()
