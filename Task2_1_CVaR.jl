@@ -1,7 +1,7 @@
 using JuMP, HiGHS
 using CSV, DataFrames
 
-# --- Load and prepare data (same as before) ---
+# --- Load and clean data ---
 df = CSV.read("Stochastic_Load_Profiles.csv", DataFrame)
 load_profiles_clean = df[:, 2:end-1]
 load_profiles = Matrix{Float64}(undef, size(load_profiles_clean)...)
@@ -13,37 +13,35 @@ end
 
 # Use first 100 in-sample scenarios
 F = load_profiles[1:100, :]
-N, T = size(F)
-
-# --- CVaR model parameters ---
-α = 0.90
-β = 1.0  # Risk-aversion weight (try 0, 0.5, 1.0, 2.0 for experimentation)
+N, T = size(F)             # N = number of scenarios (i), T = number of minutes (m)
+epsilon = 0.1              # 10% violation tolerance
 
 model = Model(HiGHS.Optimizer)
 
-@variable(model, R >= 0)           # reserve bid
-@variable(model, s[1:N] >= 0)      # max shortfall in each scenario
-@variable(model, ξ)                # VaR threshold
-@variable(model, u[1:N] >= 0)      # CVaR auxiliary vars
+@variable(model, c_up >= 0)                        # Reserve capacity to bid
+@variable(model, beta <= 0)                        # CVaR VaR-threshold
+@variable(model, xi[1:N, 1:T] >= 0)                 # Shortfall at (i, m)
 
-# --- Constraints ---
-
-# Shortfall definition: s[i] ≥ R - F[i, m] for all m
+# Constraint 1: c_up - F[i, m] ≤ xi[i, m]
 for i in 1:N
     for m in 1:T
-        @constraint(model, s[i] >= R - F[i, m])
+        @constraint(model, c_up - F[i, m] <= xi[i, m])
     end
 end
 
-# CVaR auxiliary constraint
+# Constraint 2: average of all xi[i,m] ≤ (1 - epsilon) * beta
+@constraint(model, (1 / (N * T)) * sum(xi) <= (1 - epsilon) * beta)
+
+# Constraint 3: beta ≤ xi[i, m] ∀ i, m
 for i in 1:N
-    @constraint(model, u[i] >= s[i] - ξ)
+    for m in 1:T
+        @constraint(model, beta <= xi[i, m])
+    end
 end
 
-# --- Objective: maximize reserve bid while penalizing tail risk (CVaR) ---
-@objective(model, Max, R - β * (ξ + (1 / ((1 - α) * N)) * sum(u)))
+@objective(model, Max, c_up)
 
 optimize!(model)
 
-println("Optimal Reserve Bid (CVaR): ", value(R))
-println("CVaR Term: ", value(ξ + (1 / ((1 - α) * N)) * sum(value.(u))))
+println("Optimal Reserve Bid (c_up): ", value(c_up))
+println("VaR threshold (beta): ", value(beta))
