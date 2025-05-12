@@ -28,14 +28,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
         @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
         @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
         @constraint(m, [t in T, s in S], t_up[t, s] >= 0)
-    
-        @variable(m, z[T, S], Bin)  # binary variable to switch between up and down regulation
-    
-        @constraint(m, [t in T, s in S], t_up[t, s] <= 500 * z[t, s]) # make max production a variable instead of 500
-        @constraint(m, [t in T, s in S], t_down[t, s] <= 500 * (1 - z[t, s]))
-    
-        # One-pricing scheme
-        # Generate balancing prices per scenario
+
         if pricing_scheme == "one-price"
             up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
             down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
@@ -140,8 +133,15 @@ function cross_validation(num_insample_scenarios, pricing_scheme)
     return mean(per_scenario_profits_in), mean(per_scenario_profits_out)
 end
 
+prof_in_sample_200_1price , prof_out_sample_1400_1price = cross_validation(200, "one-price")
+prof_in_sample_200_2price , prof_out_sample_1400_2price = cross_validation(200, "two-price")
 
+println("In-sample average profit one price (200 scenario optimisation): ", prof_in_sample_200_1price)
+println("Out-of-sample average profit one price (200 scenario optimisation): ", prof_out_sample_1400_1price)
+println("In-sample average profit two price (200 scenario optimisation): ", prof_in_sample_200_2price)
+println("Out-of-sample average profit two price (200 scenario optimisation): ", prof_out_sample_1400_2price)
 
+#=
 prof_in_sample_400_1price , prof_out_sample_1200_1price = cross_validation(400, "one-price")
 prof_in_sample_200_1price , prof_out_sample_1400_1price = cross_validation(200, "one-price")
 prof_in_sample_100_1price , prof_out_sample_1500_1price = cross_validation(100, "one-price")
@@ -171,3 +171,4 @@ legend()
 grid(true)
 tight_layout()
 show()
+=#

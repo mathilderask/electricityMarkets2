@@ -45,6 +45,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
 
     T = 1:size(p_real, 1) # hours
     S = 1:size(p_real, 2)  # scenarios
+    no_scenarios = size(p_real, 2)
 
     @variable(m, 0 <= p[T] <= 500)
     @variable(m, t_up[T, S] >= 0)
@@ -70,8 +71,8 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
     else
         error("Invalid pricing scheme. Use 'one-price' or 'two-price'.")
     end
-    @objective(m, Max, sum(
-            lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
+    @objective(m, Max, sum( 1/no_scenarios * (
+            lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s])
             for  t in T, s in S
         )
     )
@@ -81,13 +82,41 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
     return opt_production, expected_profit
 end
 
+
+
+function evaluate_expected_profit(p_opt, p_real, lambda_DA, system_status, pricing_scheme)
+    profit_list = []
+    T = 1:size(p_real, 1)
+    S = 1:size(p_real, 2)
+
+    t_delta = [p_real[t, s] - p_opt[t] for t in T, s in S]
+    t_up = [max(t, 0) for t in t_delta]
+    t_down = [max(-t, 0) for t in t_delta]
+
+    if pricing_scheme == "one-price"
+        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+        down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+    elseif pricing_scheme == "two-price"
+        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1 * lambda_DA[t, s] for t in T, s in S]
+        down_price = [system_status[t, s] == 1 ? 1 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+    end
+    for s in S
+        expected_profit = sum(lambda_DA[t, s] * p_opt[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
+                          for t in T)
+        push!(profit_list, expected_profit)
+    end
+    #println("Expected profit out sample: ", expected_profit)
+    return profit_list
+end
+
 no_of_scenarios = 200
 p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
 
 opt_production, expected_profit = optimise_bidding_quantity(p_real, lambda_DA, system_status, "one-price")
 println( "Optimal production quantity: ", opt_production)
-println("Expected cumulative profit: ", expected_profit)
-production_values = collect(opt_production)
+println("Expected average profit: ", expected_profit)
+
+
 
 using PyPlot
 
@@ -109,9 +138,21 @@ xticks(hours)
 tight_layout()
 show()
 
+production_values = collect(opt_production)
+profit_per_scenario = evaluate_expected_profit(production_values, p_real, lambda_DA, system_status, "one-price")
+using PyPlot
+figure()
+hist(profit_per_scenario, bins=30, edgecolor="black")
+title("Profit Distribution for One-Price Scheme")
+xlabel("Profit (€)")
+ylabel("Number of Scenarios")
+grid(true)
+show()
+
+
 opt_production_twoprice, expected_profit_twoprice = optimise_bidding_quantity(p_real, lambda_DA, system_status, "two-price")
 println( "Optimal production quantity: ", opt_production_twoprice)
-println("Expected cumulative profit: ", expected_profit_twoprice)
+println("Expected average profit: ", expected_profit_twoprice)
 production_values = collect(opt_production_twoprice)
 
 
@@ -133,3 +174,14 @@ tight_layout()
 show()
 display(gcf())
 sleep(10)  # <<< Wait 10 seconds to see the figure
+
+production_values = collect(opt_production_twoprice)
+profit_per_scenario = evaluate_expected_profit(production_values, p_real, lambda_DA, system_status, "two-price")
+using PyPlot
+figure()
+hist(profit_per_scenario, bins=30, edgecolor="black")
+title("Profit Distribution for Two-Price Scheme")
+xlabel("Profit (€)")
+ylabel("Number of Scenarios")
+grid(true)
+show()
