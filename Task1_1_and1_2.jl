@@ -56,6 +56,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
 
     # One-pricing scheme
     # Generate balancing prices per scenario
+    # 1 means system in excess, 0 means system in deficit
     if pricing_scheme == "one-price"
         up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
         down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
@@ -76,7 +77,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
     return opt_production, expected_profit
 end
 
-no_of_scenarios = 10
+no_of_scenarios = 200
 p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
 
 opt_production, expected_profit = optimise_bidding_quantity(p_real, lambda_DA, system_status, "one-price")
