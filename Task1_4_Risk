@@ -8,16 +8,20 @@ scenarios_DF = CSV.read("scenario_combinations.csv", DataFrame; delim=',', heade
 system_status_DF = CSV.read("power_system_conditions.csv", DataFrame; delim=',', header=true)
 
 scenario_ID = scenarios_DF[:, 1]
+Random.seed!(8) #Makes the random number generation reproducible
 
 function scenario_generator(no_of_scenarios)
-    Random.seed!(8)
+#### Returns a random selection of defined number of scenarios in.
+#### Returns 3 dataframes for the three variables where each column is corresponding data for a randomly selected scenario
+#### Each dataframe has 24 rows for the 24 hours of the day
     scenarios_indices = randperm(length(scenario_ID))[1:no_of_scenarios]
     p_real_indices = scenarios_DF[scenarios_indices, 2]
     lambda_DA_indices = scenarios_DF[scenarios_indices, 3]
     system_status_indices = scenarios_DF[scenarios_indices, 4]
 
+    # need it in dataframe format because otherwise it freaks out about indexing with duplicates
     p_real_cols = [p_real_DF[:, i+1] for i in p_real_indices]
-    col_names = Symbol.("selected_scenario_", 1:length(p_real_cols))
+    col_names = Symbol.("selected_scenario_", 1:length(p_real_cols))  # custom unique names
     p_real = DataFrame(p_real_cols, col_names)
 
     lambda_DA_cols = [lambda_DA_DF[:, i+1] for i in lambda_DA_indices]
@@ -26,44 +30,41 @@ function scenario_generator(no_of_scenarios)
     system_status_cols = [system_status_DF[:, i+1] for i in system_status_indices]
     system_status = DataFrame(system_status_cols, col_names)
 
-    return Matrix(p_real), Matrix(lambda_DA), Matrix(system_status)
+    global capacity = 500 # Installed capacity in MW
+    p_real_matrix = Matrix(p_real) * capacity # scale for 500MW wind farm
+    lambda_DA_matrix = Matrix(lambda_DA)
+    system_status_matrix = Matrix(system_status)
+    return p_real_matrix, lambda_DA_matrix, system_status_matrix
 end
 
-function optimise_bidding_quantity(
-    p_real, lambda_DA, system_status;
-    alpha=0.9, beta=0.0, pricing_scheme
-)
+function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha=0.9, beta=0.0, pricing_scheme)
+
     m = Model(HiGHS.Optimizer)
     set_silent(m)
-    #set_silent(m)
 
     T = 1:size(p_real, 1)  # hours
     S = 1:size(p_real, 2)  # scenarios
     pi = fill(1 / length(S), length(S))  # equal scenario probabilities
 
-    @variable(m, p[T])
+    @variable(m, 0 <= p[T] <= 500)
     @variable(m, t_up[T, S] >= 0)
     @variable(m, t_down[T, S] >= 0)
     @variable(m, t_delta[T, S])
+
     @variable(m, zeta)
     @variable(m, eta[S] >= 0)
-    @variable(m, z[T, S], Bin)
-
-    @constraint(m, [t in T], p[t] >= 0)
-    @constraint(m, [t in T], p[t] <= 500)
 
     @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
     @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
-    @constraint(m, [t in T, s in S], t_up[t, s] <= 500 * z[t, s])
-    @constraint(m, [t in T, s in S], t_down[t, s] <= 500 * (1 - z[t, s]))
+
 
     # Pricing scheme
     if pricing_scheme == "one-price"
         up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-        down_price = up_price
+        down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
     elseif pricing_scheme == "two-price"
-        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.00 * lambda_DA[t, s] for t in T, s in S]
-        down_price = [system_status[t, s] == 1 ? 1.00 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1 * lambda_DA[t, s] for t in T, s in S]
+        down_price = [system_status[t, s] == 1 ? 1 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
     else
         error("Invalid pricing scheme. Use 'one-price' or 'two-price'.")
     end
@@ -75,18 +76,21 @@ function optimise_bidding_quantity(
     ))
     
     
-    @constraint(m, [s in S], eta[s] >= zeta - Profit[s])
+    @constraint(m, [s in S], eta[s] >= zeta - sum(
+        lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
+        for t in T))
 
     @objective(m, Max,
     (1 - beta) * sum(pi[s] * Profit[s] for s in S) +
     beta * (zeta - (1 / (1 - alpha)) * sum(pi[s] * eta[s] for s in S))
 )
-
+            
     optimize!(m)
 
     opt_production = JuMP.value.(p)
-    expected_profit = sum(JuMP.value(Profit[s]) for s in S)
     cvar_value = JuMP.value(zeta) - (1 / (1 - alpha)) * sum(JuMP.value(eta[s]) for s in S)
+    expected_profit = (JuMP.objective_value(m)-beta*cvar)/(1-beta)
+        
     
     # Print individual scenario profits
     scenario_profits = [JuMP.value(Profit[s]) for s in S]
@@ -130,6 +134,9 @@ for β in β_values
     push!(profit_two, exp_profit_two)
     push!(cvar_two, cvar_val_two)
 end
+println("cvarone=",cvar_one)
+println("cvartwo",cvar_two)
+
 
 
 # Plotting

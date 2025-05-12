@@ -50,15 +50,9 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
     @variable(m, t_up[T, S] >= 0)
     @variable(m, t_down[T, S] >= 0)
     @variable(m, t_delta[T, S])
-    @variable(m, z[T, S], Bin)  # binary variable to switch between up and down regulation
-
+    
     @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
     @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
-
-    @variable(m, z[T, S], Bin)  # binary variable to switch between up and down regulation
-
-    @constraint(m, [t in T, s in S], t_up[t, s] <= 500 * z[t, s]) # make max production a variable instead of 500
-    @constraint(m, [t in T, s in S], t_down[t, s] <= 500 * (1 - z[t, s]))
 
     # One-pricing scheme
     # Generate balancing prices per scenario
