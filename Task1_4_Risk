@@ -88,20 +88,20 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha=0.9, 
     optimize!(m)
 
     opt_production = JuMP.value.(p)
-    cvar_value = JuMP.value(zeta) - (1 / (1 - alpha)) * sum(JuMP.value(eta[s]) for s in S)
+    cvar = JuMP.value(zeta) - (1 / (1 - alpha)) * sum(pi[s]*JuMP.value(eta[s]) for s in S)
     expected_profit = (JuMP.objective_value(m)-beta*cvar)/(1-beta)
         
     
     # Print individual scenario profits
     scenario_profits = [JuMP.value(Profit[s]) for s in S]
 
-    return opt_production, expected_profit, cvar_value, scenario_profits
+    return opt_production, expected_profit, cvar, scenario_profits
 end
 
 
 
 # Scenario generation
-no_of_scenarios = 20
+no_of_scenarios = 30
 p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
 
 opt_production, expected_profit, cvar_value, scenario_profits = optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme="one-price")
