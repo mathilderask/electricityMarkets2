@@ -5,17 +5,9 @@ using CSV, DataFrames
 
 
 # Load profile: Stochastic_Load_Profiles.csv (F[i,m])
-load_profiles_df = CSV.read("Stochastic_Load_Profiles.csv", DataFrame)
-
-# USE 300 PROFILES -------
-# Drop the last column which contains "In-sample" labels
-load_profiles_clean = load_profiles_df[:, 2:end-1]  # Exclude the first and last column
-
-# Convert load_profiles to a matrix of Float64 values
- for j in 1:size(load_profiles_clean, 2)
-    col = load_profiles_clean[!, j]
-    load_profiles[:, j] = [x isa Float64 ? x : parse(Float64, replace(string(x), ',' => '.')) for x in col]
-end
+df = CSV.read("Stochastic_Load_Profiles.csv", DataFrame)
+load_profiles_clean = df[2:end, 1:end-1]  
+load_profiles = parse.(Float64, replace.(string.(Matrix(load_profiles_clean)), ',' => '.'))
 
 # Parameters
 F = load_profiles[1:100, :] # load profiles (300 scenarios, 60 minutes) (To get first 100 do: [1:100, :])
@@ -27,18 +19,12 @@ min_required = ceil(Int, p_threshold * N)  # e.g., 90
 model = Model(HiGHS.Optimizer)
 
 @variable(model, c_up >= 0)  # reserve bid (c_up)
-@variable(model, y[1:N], Bin)  # scenario indicators: 1 if scenario i satisfies all mins
+@variable(model, y[1:N, 1:T], Bin)  # scenario indicators: 1 if scenario i satisfies all mins
 
 big_M = 1e5  # Penalty term to deactivate constraint when y[i] == 0
 
-for i in 1:N
-    for m in 1:T
-        @constraint(model, F[i, m] - c_up + (1 - y[i]) * big_M >= 0)
-    end
-end
-
-# At least 90% of scenarios must satisfy
-@constraint(model, sum(y) >= min_required)
+@constraint(model, [i=1:N, m=1:T], F[i, m] - c_up + (1 - y[i, m]) * big_M >= 0) # Constraint: if no violation, enforce c_up ≤ F[i,m]
+@constraint(model, sum(y) >= min_required) # At least 90% of scenarios must satisfy
 
 @objective(model, Max, c_up)
 
