@@ -10,11 +10,11 @@ load_profiles = parse.(Float64, replace.(string.(Matrix(load_profiles_clean)), '
 test_profiles = load_profiles[end-199:end, :]  # Access the last 200 rows (out-of-sample data)
 N_test, T = size(test_profiles)
 p_threshold = 0.9
-min_required_minutes = ceil(Int, p_threshold * T * N_test)  # Minimum number of minutes to pass
+min_required_minutes = ceil(Int, p_threshold * T)  # Minimum number of minutes to pass
 
 
 # === Define the two bids from Section 2.1 ===
-optimal_bid_ALSOX = 231  # ← replace with result from 2.1 (ALSO-X)
+optimal_bid_ALSOX = 441  # ← replace with result from 2.1 (ALSO-X)
 optimal_bid_CVaR  = 220  # ← replace with result from 2.1 (CVaR)
 
 
