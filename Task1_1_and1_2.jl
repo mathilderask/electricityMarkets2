@@ -1,7 +1,6 @@
 import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
 using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
 
-#Pkg.add("HiGHS")
 
 p_real_DF = CSV.read("windscenarios_zone2.csv", DataFrame;  delim=',', header=true)
 lambda_DA_DF = CSV.read("DA_hourly_price_scenarios.csv", DataFrame;  delim=',', header=true)
@@ -38,11 +37,10 @@ function scenario_generator(no_of_scenarios)
     return p_real_matrix, lambda_DA_matrix, system_status_matrix
 end
 
-function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme) # later add the input: "pricing_scheme", where it will be either "one-price" or "two-price"
-# now these inputs are data frames with all the scenarios as columns and hours as rows
-# this is to enable stochastic modelling
+function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme)
+# these inputs are data frames with all the scenarios as columns and hours as rows
     m = Model(HiGHS.Optimizer)
-
+    set_silent(m) # suppress output from the solver
     T = 1:size(p_real, 1) # hours
     S = 1:size(p_real, 2)  # scenarios
     no_scenarios = size(p_real, 2)
@@ -55,7 +53,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
     @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
     @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
 
-    # One-pricing scheme
+
     # Generate balancing prices per scenario
     # 1 means system in excess, 0 means system in deficit
     if pricing_scheme == "one-price"
@@ -80,7 +78,7 @@ end
 
 
 
-function evaluate_expected_profit(p_opt, p_real, lambda_DA, system_status, pricing_scheme)
+function evaluate_profit_per_scenario(p_opt, p_real, lambda_DA, system_status, pricing_scheme)
     profit_list = []
     T = 1:size(p_real, 1)
     S = 1:size(p_real, 2)
@@ -101,7 +99,6 @@ function evaluate_expected_profit(p_opt, p_real, lambda_DA, system_status, prici
                           for t in T)
         push!(profit_list, expected_profit)
     end
-    #println("Expected profit out sample: ", expected_profit)
     return profit_list
 end
 
@@ -135,7 +132,7 @@ tight_layout()
 show()
 
 production_values = collect(opt_production)
-profit_per_scenario = evaluate_expected_profit(production_values, p_real, lambda_DA, system_status, "one-price")
+profit_per_scenario = evaluate_profit_per_scenario(production_values, p_real, lambda_DA, system_status, "one-price")
 using PyPlot
 figure()
 hist(profit_per_scenario, bins=30, edgecolor="black")
@@ -169,10 +166,9 @@ xticks(hours)
 tight_layout()
 show()
 display(gcf())
-sleep(10)  # <<< Wait 10 seconds to see the figure
 
 production_values = collect(opt_production_twoprice)
-profit_per_scenario = evaluate_expected_profit(production_values, p_real, lambda_DA, system_status, "two-price")
+profit_per_scenario = evaluate_profit_per_scenario(production_values, p_real, lambda_DA, system_status, "two-price")
 using PyPlot
 figure()
 hist(profit_per_scenario, bins=30, edgecolor="black")
