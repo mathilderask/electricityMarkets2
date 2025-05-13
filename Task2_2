@@ -15,7 +15,7 @@ min_required_minutes = ceil(Int, p_threshold * T)  # Minimum number of minutes t
 
 # === Define the two bids from Section 2.1 ===
 optimal_bid_ALSOX = 441  # ← replace with result from 2.1 (ALSO-X)
-optimal_bid_CVaR  = 220  # ← replace with result from 2.1 (CVaR)
+optimal_bid_CVaR  = 242.55  # ← replace with result from 2.1 (CVaR)
 
 
 function evaluate_bid(test_profiles, bid, label)
