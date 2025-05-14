@@ -1,4 +1,7 @@
-using CSV, DataFrames
+using CSV, DataFrames, Dates
+
+# === Start timer ===
+start_time = now()
 
 # === Load and clean data ===
 df = CSV.read("Stochastic_Load_Profiles.csv", DataFrame)
@@ -14,8 +17,8 @@ min_required_minutes = ceil(Int, p_threshold * T)  # Minimum number of minutes t
 
 
 # === Define the two bids from Section 2.1 ===
-optimal_bid_ALSOX = 225.26  # ← replace with result from 2.1 (ALSO-X)
-optimal_bid_CVaR  = 242.55  # ← replace with result from 2.1 (CVaR)
+optimal_bid_ALSOX = 225.26  # ← replace with result from 2.1 (ALSO-X)   # Manual test: 234 kW (91.5%)
+optimal_bid_CVaR  = 242.55  # ← replace with result from 2.1 (CVaR)     # Manual test: 234 kW (91.5%)
 
 
 function evaluate_bid(test_profiles, bid, label)
@@ -40,3 +43,7 @@ end
 margins_ALSOX = evaluate_bid(test_profiles, optimal_bid_ALSOX, "ALSO-X")
 margins_CVaR  = evaluate_bid(test_profiles, optimal_bid_CVaR,  "CVaR")
 nothing
+
+# === End timer and report duration ===
+end_time = now()
+println("Total execution time: ", end_time - start_time)

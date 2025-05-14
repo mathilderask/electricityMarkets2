@@ -7,13 +7,12 @@ df = CSV.read("Stochastic_Load_Profiles.csv", DataFrame)
 load_profiles_clean = df[2:end, 1:end-1]  
 load_profiles = parse.(Float64, replace.(string.(Matrix(load_profiles_clean)), ',' => '.'))
 
+# --- TASK 2.1 ---
 # Use first 100 in-sample profiles & Parameters
 F = load_profiles[1:100, :]
 test_profiles = load_profiles[end-199:end, :]  # Access the last 200 rows (out-of-sample data)
 N, T = size(F)
 max_capacity = 600              # Maximum capacity of the reserve bid
-eta = 0.1                       # 10% violation tolerance
-q = floor(Int, eta * N * T)     # Total number of allowed violations
 p_threshhold = 0.9              # P90 means at least 90% must satisfy constraint
 
 # --- Define the model ---
@@ -36,6 +35,7 @@ println("Optimal Reserve Bid (strict minute-wise ALSO-X): ", value(c_up))
 println("Total violation weight (relaxed): ", sum(value.(y)))
 
 
+# --- TASK 2.2 ---
 # --- Calculate pass rate for out-of-sample ---
 function add_p90_passrate_line!(c_up, test_profiles; p_threshold=0.9)
     N_test, T = size(test_profiles)
