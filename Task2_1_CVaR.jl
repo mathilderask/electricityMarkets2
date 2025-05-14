@@ -85,6 +85,6 @@ histogram(overbid_frequencies,
 vline!([10], color=:red, linestyle=:dash, linewidth=2, label="P10 target line (10%)")
 vline!([mean(overbid_frequencies)], color=:green, linestyle=:dot, linewidth=2,
     label="Mean = $(round(mean(overbid_frequencies), digits=2))%")
-vline!([100-pass_rate], color=:blue, linestyle=:dot, linewidth=2,
+vline!([100-pass_rate], color=:blue, linestyle=:dash, linewidth=2,
     label="Shortfall rate = $(round((100-pass_rate), digits=2))%")
 
