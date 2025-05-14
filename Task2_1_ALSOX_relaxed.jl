@@ -36,6 +36,7 @@ println("Optimal Reserve Bid (strict minute-wise ALSO-X): ", value(c_up))
 println("Total violation weight (relaxed): ", sum(value.(y)))
 
 
+# --- Calculate pass rate for out-of-sample ---
 function add_p90_passrate_line!(c_up, test_profiles; p_threshold=0.9)
     N_test, T = size(test_profiles)
     min_required_minutes = ceil(Int, p_threshold * T)  # E.g. 54 out of 60 minutes
@@ -46,6 +47,8 @@ function add_p90_passrate_line!(c_up, test_profiles; p_threshold=0.9)
     return pass_rate
 end
 
+
+# --- Plotting ---
 using Plots, Statistics
 
 # --- Calculate out-of-sample overbid frequencies ---
