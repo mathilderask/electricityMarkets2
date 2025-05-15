@@ -101,7 +101,7 @@ end
 
 
 # Scenario generation
-no_of_scenarios = 30
+no_of_scenarios = 200
 p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
 
 opt_production, expected_profit, cvar_value, scenario_profits = optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme="one-price")
@@ -141,7 +141,7 @@ println("cvartwo",cvar_two)
 
 # Plotting
 figure(figsize=(10,6))
-plot(cvar_one, profit_one, "o-", label="One-Price Market")
+#plot(cvar_one, profit_one, "o-", label="One-Price Market")
 plot(cvar_two, profit_two, "s-", label="Two-Price Market")
 xlabel("Conditional Value at Risk (CVaR)")
 ylabel("Expected Profit (€)")
