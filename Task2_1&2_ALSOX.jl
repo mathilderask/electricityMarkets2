@@ -37,7 +37,7 @@ println("Total violation weight (relaxed): ", sum(value.(y)))
 
 # --- TASK 2.2 ---
 # --- Calculate pass rate for out-of-sample ---
-function add_p90_passrate_line!(c_up, test_profiles; p_threshold=0.9)
+function add_p90_passrate_line!(c_up, test_profiles, p_threshold)
     N_test, T = size(test_profiles)
     min_required_minutes = ceil(Int, p_threshold * T)  # E.g. 54 out of 60 minutes
 
@@ -54,7 +54,7 @@ using Plots, Statistics
 # --- Calculate out-of-sample overbid frequencies ---
 N_test, T = size(test_profiles)
 overbid_frequencies = [100 * sum(value(c_up) .> test_profiles[i, :]) / T for i in 1:N_test]
-pass_rate = add_p90_passrate_line!(value(c_up), test_profiles)
+pass_rate = add_p90_passrate_line!(value(c_up), test_profiles,p_threshhold)
 
 
 # --- Define histogram bins ---

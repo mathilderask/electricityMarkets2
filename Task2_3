@@ -1,0 +1,85 @@
+using JuMP, HiGHS, CSV, DataFrames
+
+# === Load data ===
+df = CSV.read("Stochastic_Load_Profiles.csv", DataFrame)
+load_profiles_clean = df[2:end, 1:end-1]  
+load_profiles = parse.(Float64, replace.(string.(Matrix(load_profiles_clean)), ',' => '.'))
+
+# === Data setup ===
+F_all = load_profiles[1:100, :]              # In-sample data
+test_profiles = load_profiles[end-199:end, :]  # Out-of-sample data
+N, T = size(F_all)
+max_capacity = 600
+M = 600  # Big M for constraint deactivation
+N_test, _ = size(test_profiles)
+
+# === Evaluation helper ===
+function add_p90_passrate_line!(c_up, test_profiles, p_threshold)
+    min_required_minutes = ceil(Int, p_threshold * T)
+    passed_count = count(i -> sum(test_profiles[i, :] .>= c_up) >= min_required_minutes, 1:N_test)
+    pass_rate = passed_count / N_test * 100
+    return pass_rate
+end
+
+# === Loop over different P90 thresholds ===
+results = DataFrame(P90_Threshold=Float64[], Optimal_Bid=Float64[], Compliance_Rate=Float64[])
+
+for p_thresh in 0.80:0.01:1.00
+    # Define and solve model
+    model = Model(HiGHS.Optimizer)
+    @variable(model, 0 <= c_up <= max_capacity)
+    @variable(model, y[1:N, 1:T], Bin)
+
+    @constraint(model, [i=1:N, m=1:T], c_up - F_all[i, m] <= y[i, m] * M)
+    @constraint(model, [i=1:N], sum(y[i, :]) <= floor((1 - p_thresh) * T))
+
+    @objective(model, Max, c_up)
+    optimize!(model)
+
+    # Get optimal bid
+    c_opt = value(c_up)
+
+    # Evaluate out-of-sample compliance
+    compliance_rate = add_p90_passrate_line!(c_opt, test_profiles; p_threshold=p_thresh)
+
+    # Store result
+    push!(results, (P90_Threshold = p_thresh, Optimal_Bid = c_opt, Compliance_Rate = compliance_rate))
+end
+
+# === Print Results ===
+println("P90 Threshold\tOptimal Bid\tCompliance Rate (%)")
+for row in eachrow(results)
+    println("$(round(row.P90_Threshold, digits=2))\t\t$(round(row.Optimal_Bid, digits=2))\t\t$(round(row.Compliance_Rate, digits=2))")
+end
+
+# === Plotting ===
+using PyPlot
+
+# Prepare data
+x = results.P90_Threshold .* 100  # Convert to percentage scale
+y1 = results.Optimal_Bid
+y2 = results.Compliance_Rate
+
+# --- Plot 1: Optimal Reserve Bid vs. P90 Threshold ---
+figure()
+PyPlot.plot(x, y1, label="Optimal Bid", linewidth=2, color="blue")
+xlabel("P90 Threshold [%]")
+ylabel("Optimal Reserve Bid [MW]")
+title("Effect of P90 Requirement on ALSO-X Reserve Bid")
+legend(loc="upper left")
+grid(true)
+tight_layout()
+show()
+display(gcf())
+
+# --- Plot 2: Compliance Rate vs. P90 Threshold ---
+figure()
+PyPlot.plot(x, y2, label="Compliance Rate (%)", linestyle="--", linewidth=2, color="green")
+xlabel("P90 Threshold [%]")
+ylabel("Compliance Rate [%]")
+title("Out-of-Sample Compliance vs. P90 Threshold")
+legend(loc="lower right")
+grid(true)
+tight_layout()
+show()
+display(gcf())
