@@ -13,7 +13,7 @@ F = load_profiles[1:100, :]
 test_profiles = load_profiles[end-199:end, :]  # Access the last 200 rows (out-of-sample data)
 N, T = size(F)
 max_capacity = 600              # Maximum capacity of the reserve bid
-p_threshhold = 0.9              # P90 means at least 90% must satisfy constraint
+p_threshold = 0.9              # P90 means at least 90% must satisfy constraint
 
 # --- Define the model ---
 model = Model(HiGHS.Optimizer)
@@ -25,7 +25,7 @@ model = Model(HiGHS.Optimizer)
 M = 600     # big-M to deactivate constraint when violation is allowed
 
 @constraint(model, [i=1:N, m=1:T], c_up - F[i, m] <= y[i, m] * M)   # Constraint: if no violation, enforce c_up ≤ F[i,m]
-@constraint(model, [i=1:N], sum(y[i, :]) <= floor((1 - p_threshhold) * T)) # Total violations across all scenario-minutes must be ≤ eta
+@constraint(model, [i=1:N], sum(y[i, :]) <= floor((1 - p_threshold) * T)) # Total violations across all scenario-minutes must be ≤ eta
 
 @objective(model, Max, c_up)
 
