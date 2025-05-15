@@ -75,48 +75,32 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha=0.9, 
         for t in T
     ))
     
-    
     @constraint(m, [s in S], eta[s] >= zeta - sum(
         lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
         for t in T))
 
     @objective(m, Max,
-    (1 - beta) * sum(pi[s] * Profit[s] for s in S) +
+    (1 - beta) * sum(pi[s] * sum(
+        lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
+        for t in T) for s in S) +
     beta * (zeta - (1 / (1 - alpha)) * sum(pi[s] * eta[s] for s in S))
 )
-            
+  
     optimize!(m)
-
     opt_production = JuMP.value.(p)
     cvar = JuMP.value(zeta) - (1 / (1 - alpha)) * sum(pi[s]*JuMP.value(eta[s]) for s in S)
     expected_profit = (JuMP.objective_value(m)-beta*cvar)/(1-beta)
-        
-    
-    # Print individual scenario profits
-    scenario_profits = [JuMP.value(Profit[s]) for s in S]
 
-    return opt_production, expected_profit, cvar, scenario_profits
+    return opt_production, expected_profit, cvar
 end
-
 
 
 # Scenario generation
 no_of_scenarios = 200
 p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
 
-opt_production, expected_profit, cvar_value, scenario_profits = optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme="one-price")
-println("Optimal production quantity: ", opt_production)
-println("Expected cumulative profit: ", expected_profit)
-println("cvar value: ", cvar_value)
-production_values = collect(opt_production)
-
-for (i, profit) in enumerate(scenario_profits)
-    println("Profit[$i] = ", profit)
-end
-
 
 using PyPlot
-
 # β loop
 β_values = collect(0.0:0.1:1.0)
 profit_one = Float64[]
@@ -138,10 +122,9 @@ println("cvarone=",cvar_one)
 println("cvartwo",cvar_two)
 
 
-
 # Plotting
 figure(figsize=(10,6))
-#plot(cvar_one, profit_one, "o-", label="One-Price Market")
+plot(cvar_one, profit_one, "o-", label="One-Price Market")
 plot(cvar_two, profit_two, "s-", label="Two-Price Market")
 xlabel("Conditional Value at Risk (CVaR)")
 ylabel("Expected Profit (€)")
