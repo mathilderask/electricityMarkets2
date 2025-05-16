@@ -1,5 +1,4 @@
 using CSV, DataFrames, Dates
-include("functions.jl")  # Load functions from Functions.jl
 
 # === Start timer ===
 start_time = now()
@@ -20,6 +19,25 @@ min_required_minutes = ceil(Int, p_threshold * T)  # Minimum number of minutes t
 # === Define the two bids from Section 2.1 ===
 optimal_bid_ALSOX = 225.26  # ← replace with result from 2.1 (ALSO-X)   # Manual test: 234 kW (91.5%)
 optimal_bid_CVaR  = 242.55  # ← replace with result from 2.1 (CVaR)     # Manual test: 234 kW (91.5%)
+
+
+function evaluate_bid(test_profiles, bid, label)
+    margin_matrix = test_profiles .- bid  # Same shape as test_profiles
+    # Count how many minutes are satisfied for each profile
+    compliance = sum(margin_matrix .>= 0, dims=2)  # Compute sums for each row
+    compliance = vec(compliance)  # Ensure it's a vector, not a matrix
+    
+    # Compare compliance with the threshold (min_required_minutes)
+    passed_count = sum(compliance .>= min_required_minutes)
+    
+    p90_ratio = passed_count / N_test * 100
+    println("P90 Verification for ", label)
+    println("Compliant profiles: ", passed_count, " out of ", N_test)
+    println("Compliance rate: ", round(p90_ratio, digits=2), "%")
+
+
+    return margin_matrix
+end
 
 # === Evaluate both bids ===
 margins_ALSOX = evaluate_bid(test_profiles, optimal_bid_ALSOX, "ALSO-X")

@@ -1,7 +1,4 @@
-#import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
-using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Dates, PyPlot
-include("Task1_1_and1_2.jl") # Load functions from Task1_1_and1_2.jl
-include("functions.jl") # Load functions from functions.jl
+using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
 
 start_time = time()
 
@@ -11,6 +8,8 @@ scenarios_DF = CSV.read("scenario_combinations.csv", DataFrame; delim=',', heade
 system_status_DF = CSV.read("power_system_conditions.csv", DataFrame; delim=',', header=true)
 
 scenario_ID = scenarios_DF[:, 1]
+global alpha = 0.9
+global capacity = 500 # Installed capacity in MW
 Random.seed!(8) #Makes the random number generation reproducible
 
 function scenario_generator(no_of_scenarios)
@@ -33,14 +32,13 @@ function scenario_generator(no_of_scenarios)
     system_status_cols = [system_status_DF[:, i+1] for i in system_status_indices]
     system_status = DataFrame(system_status_cols, col_names)
 
-    global capacity = 500 # Installed capacity in MW
     p_real_matrix = Matrix(p_real) * capacity # scale for 500MW wind farm
     lambda_DA_matrix = Matrix(lambda_DA)
     system_status_matrix = Matrix(system_status)
     return p_real_matrix, lambda_DA_matrix, system_status_matrix
 end
 
-function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha=0.9, beta=0.0, pricing_scheme)
+function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha, beta, pricing_scheme)
 
     m = Model(HiGHS.Optimizer)
     set_silent(m)
@@ -50,13 +48,10 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha=0.9, 
     pi = fill(1 / length(S), length(S))  # equal scenario probabilities
     no_scenarios = size(p_real, 2)
 
-    @variable(m, 0 <= p[T] <= 500)
+    @variable(m, 0 <= p[T] <= capacity)
     @variable(m, t_up[T, S] >= 0)
     @variable(m, t_down[T, S] >= 0)
     @variable(m, t_delta[T, S])
-
-    @variable(m, zeta)
-    @variable(m, eta[S] >= 0)
 
     @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
     @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
@@ -72,38 +67,46 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha=0.9, 
     else
         error("Invalid pricing scheme. Use 'one-price' or 'two-price'.")
     end
-
+    
     # Define profit per scenario
     @expression(m, Profit[s in S], sum(
         lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
         for t in T
     ))
+
+    # CVaR variables
+    @variable(m, zeta)
+    @variable(m, eta[S] >= 0)
     
     # CVaR constraints using Profit[s]
     @constraint(m, [s in S], eta[s] >= zeta - Profit[s])
 
-
+    
     # Objective using Profit[s]
-    @objective(m, Max,
-        (1 - beta) * sum(1/no_scenarios * Profit[s] for s in S)
-        + beta * (zeta - (1 / (1 - alpha)) * sum(1/no_scenarios * eta[s] for s in S))
+     @objective(m, Max,
+    sum((1-beta) * pi[s] * Profit[s] for s in S) +
+    beta * (zeta - ((1 / (1 - alpha)) * sum(pi[s] * eta[s] for s in S)))
     )
 
-    
     optimize!(m)    
     opt_production = JuMP.value.(p)
-    scenario_profits = [JuMP.value(Profit[s]) for s in S]
-    expected_profit = sum(pi[s] * scenario_profits[s] for s in S)
-    cvar = JuMP.value(zeta) - (1 / (1 - alpha)) * sum(pi[s]*JuMP.value(eta[s]) for s in S)
+   #expected_profit = sum(pi[s] * JuMP.value(Profit[s]) for s in S)
+    expected_profit = JuMP.objective_value(m)
+    cvar = (JuMP.value(zeta) - (1 / (1 - alpha)) * sum(pi[s]*JuMP.value(eta[s]) for s in S))
+    var = JuMP.value(zeta)
+    #=
+    println("Expected Profit: ", expected_profit)
+    println("CVaR: ", cvar)    
+    println("VaR: ", var)
+    =#
+   println("sum of eta: ", sum(pi[s]*JuMP.value(eta[s]) for s in S))
 
-    return opt_production, expected_profit, cvar
+    return expected_profit, cvar
 end
 
 
 using PyPlot
 
-# β values for risk-aversion parameter
-β_values = collect(0.0:0.05:1.0)
 
 ### Part 1: Compare one-price vs two-price with fixed 200 scenarios
 
@@ -116,18 +119,16 @@ cvar_one = Float64[]
 profit_two = Float64[]
 cvar_two = Float64[]
 
-for β in β_values
-    opt_prod_one, exp_profit_one, cvar_val_one = optimise_bidding_quantity_extended(p_real, lambda_DA, system_status;
-        alpha=0.9, beta=β, pricing_scheme="one-price")
-    push!(profit_one, exp_profit_one)
+for beta in 0.0:0.1:1.0
+    exp_profit_one, cvar_val_one = optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha, beta, pricing_scheme="one-price")
+    push!(profit_one, exp_profit_one) 
     push!(cvar_one, cvar_val_one)
 
-    opt_prod_two, exp_profit_two, cvar_val_two = optimise_bidding_quantity_extended(p_real, lambda_DA, system_status;
-        alpha=0.9, beta=β, pricing_scheme="two-price")
-    push!(profit_two, exp_profit_two)
-    push!(cvar_two, cvar_val_two)
+   exp_profit_two, cvar_val_two = optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha, beta, pricing_scheme="two-price")
+   push!(profit_two, exp_profit_two)
+   push!(cvar_two, cvar_val_two)
 end
-
+#=
 figure(figsize=(10,6))
 plot(cvar_one ./ 1_000, profit_one ./ 1_000, "o-", label="One-Price Market")
 plot(cvar_two ./ 1_000, profit_two ./ 1_000, "s-", label="Two-Price Market")
@@ -141,10 +142,15 @@ tight_layout()
 show()
 display(gcf())
 sleep(0)  # <<< Wait 10 seconds to see the figure
+=#
 
+println("Expected Profits (One-Price): ", profit_one)
+println("CVaR Values (One-Price): ", cvar_one)
+println("Expected Profits (Two-Price): ", profit_two)
+println("CVaR Values (Two-Price): ", cvar_two)
 
 ### Part 2: Compare two-price with different number of scenarios
-
+#=
 scenario_counts = [100, 200, 300]
 results = Dict{Int, Tuple{Vector{Float64}, Vector{Float64}}}()
 
@@ -154,9 +160,8 @@ for n_scenarios in scenario_counts
     profit_vals = Float64[]
     cvar_vals = Float64[]
 
-    for β in β_values
-        opt_prod, exp_profit, cvar_val = optimise_bidding_quantity4(p_real2, lambda_DA2, system_status2;
-            alpha=0.9, beta=β, pricing_scheme="two-price")
+    for beta in 0.00:0.1:1.00
+        exp_profit, cvar_val = optimise_bidding_quantity(p_real2, lambda_DA2, system_status2; alpha, beta, pricing_scheme="two-price")
         push!(profit_vals, exp_profit)
         push!(cvar_vals, cvar_val)
     end
@@ -179,6 +184,6 @@ tight_layout()
 show()
 display(gcf())
 sleep(0)  # <<< Wait 10 seconds to see the figure
-
+=#
 end_time = time()
-println("⏱️ Total computation time: $(round(end_time - start_time, digits=2)) seconds")
+println(" Total computation time: $(round(end_time - start_time, digits=2)) seconds")
