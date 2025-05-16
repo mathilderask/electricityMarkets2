@@ -6,37 +6,14 @@ p_real_DF = CSV.read("windscenarios_zone2.csv", DataFrame;  delim=',', header=tr
 lambda_DA_DF = CSV.read("DA_hourly_price_scenarios.csv", DataFrame;  delim=',', header=true)
 scenarios_DF = CSV.read("scenario_combinations.csv", DataFrame; delim=',', header=true)
 system_status_DF = CSV.read("power_system_conditions.csv", DataFrame; delim=',', header=true)
+include("functions.jl") # Load functions from functions.jl
+ion()
 
 scenario_ID = scenarios_DF[:, 1]
 global alpha = 0.9
 global capacity = 500 # Installed capacity in MW
 Random.seed!(8) #Makes the random number generation reproducible
 
-function scenario_generator(no_of_scenarios)
-#### Returns a random selection of defined number of scenarios in.
-#### Returns 3 dataframes for the three variables where each column is corresponding data for a randomly selected scenario
-#### Each dataframe has 24 rows for the 24 hours of the day
-    scenarios_indices = randperm(length(scenario_ID))[1:no_of_scenarios]
-    p_real_indices = scenarios_DF[scenarios_indices, 2]
-    lambda_DA_indices = scenarios_DF[scenarios_indices, 3]
-    system_status_indices = scenarios_DF[scenarios_indices, 4]
-
-    # need it in dataframe format because otherwise it freaks out about indexing with duplicates
-    p_real_cols = [p_real_DF[:, i+1] for i in p_real_indices]
-    col_names = Symbol.("selected_scenario_", 1:length(p_real_cols))  # custom unique names
-    p_real = DataFrame(p_real_cols, col_names)
-
-    lambda_DA_cols = [lambda_DA_DF[:, i+1] for i in lambda_DA_indices]
-    lambda_DA = DataFrame(lambda_DA_cols, col_names)
-
-    system_status_cols = [system_status_DF[:, i+1] for i in system_status_indices]
-    system_status = DataFrame(system_status_cols, col_names)
-
-    p_real_matrix = Matrix(p_real) * capacity # scale for 500MW wind farm
-    lambda_DA_matrix = Matrix(lambda_DA)
-    system_status_matrix = Matrix(system_status)
-    return p_real_matrix, lambda_DA_matrix, system_status_matrix
-end
 
 function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha, beta, pricing_scheme)
 
@@ -60,9 +37,6 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha, beta
     @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
     @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
     
-
-
-
     # Pricing scheme
     if pricing_scheme == "one-price"
         up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
@@ -79,11 +53,12 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha, beta
         lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
         for t in T
     ))
-
+    
+    #CVaR constraints
     @constraint(m, [s in S], eta[s] >= zeta - Profit[s])
     
     # Objective using Profit[s]
-     @objective(m, Max, (1-beta) * sum(pi[s] * Profit[s] for s in S) + beta * (zeta - ((1 / (1 - alpha)) * sum(pi[s] * eta[s] for s in S))))
+    @objective(m, Max, (1-beta) * sum(pi[s] * Profit[s] for s in S) + beta * (zeta - ((1 / (1 - alpha)) * sum(pi[s] * eta[s] for s in S))))
 
 
     optimize!(m)    
@@ -100,7 +75,6 @@ using PyPlot
 
 
 ### Part 1: Compare one-price vs two-price with fixed 200 scenarios
-
 no_of_scenarios = 200
 p_real, lambda_DA, system_status = scenario_generator(no_of_scenarios)
 
@@ -138,7 +112,6 @@ display(gcf())
 
 
 ### Part 2: Compare two-price with different number of scenarios
-
 scenario_counts = [100, 200, 300]
 results = Dict{Int, Tuple{Vector{Float64}, Vector{Float64}}}()
 
@@ -171,7 +144,8 @@ gca().tick_params(axis="both", which="major", labelsize=14)
 tight_layout()
 show()
 display(gcf())
-sleep(0)  # <<< Wait 10 seconds to see the figure
+sleep(0) 
 
 end_time = time()
+
 println(" Total computation time: $(round(end_time - start_time, digits=2)) seconds")
