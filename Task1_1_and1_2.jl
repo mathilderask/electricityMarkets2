@@ -1,4 +1,4 @@
-#import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
+import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
 using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, PyPlot
 include("functions.jl")
 

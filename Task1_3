@@ -1,4 +1,4 @@
-#import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Statistics
+import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Statistics
 using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Statistics
 
 include("functions.jl") # Load
