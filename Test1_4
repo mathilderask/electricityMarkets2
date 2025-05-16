@@ -48,13 +48,19 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha, beta
     pi = fill(1 / length(S), length(S))  # equal scenario probabilities
     no_scenarios = size(p_real, 2)
 
+    # Variables
     @variable(m, 0 <= p[T] <= capacity)
     @variable(m, t_up[T, S] >= 0)
     @variable(m, t_down[T, S] >= 0)
     @variable(m, t_delta[T, S])
-
+    @variable(m, zeta)
+    @variable(m, eta[S] >= 0)
+    
+    # Constraints
     @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
     @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
+    
+
 
 
     # Pricing scheme
@@ -68,38 +74,23 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha, beta
         error("Invalid pricing scheme. Use 'one-price' or 'two-price'.")
     end
     
-    # Define profit per scenario
+    # Define total profit per scenario
     @expression(m, Profit[s in S], sum(
         lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
         for t in T
     ))
 
-    # CVaR variables
-    @variable(m, zeta)
-    @variable(m, eta[S] >= 0)
-    
-    # CVaR constraints using Profit[s]
     @constraint(m, [s in S], eta[s] >= zeta - Profit[s])
-
     
     # Objective using Profit[s]
-     @objective(m, Max,
-    sum((1-beta) * pi[s] * Profit[s] for s in S) +
-    beta * (zeta - ((1 / (1 - alpha)) * sum(pi[s] * eta[s] for s in S)))
-    )
+     @objective(m, Max, (1-beta) * sum(pi[s] * Profit[s] for s in S) + beta * (zeta - ((1 / (1 - alpha)) * sum(pi[s] * eta[s] for s in S))))
+
 
     optimize!(m)    
     opt_production = JuMP.value.(p)
-   #expected_profit = sum(pi[s] * JuMP.value(Profit[s]) for s in S)
     expected_profit = JuMP.objective_value(m)
     cvar = (JuMP.value(zeta) - (1 / (1 - alpha)) * sum(pi[s]*JuMP.value(eta[s]) for s in S))
-    var = JuMP.value(zeta)
-    #=
-    println("Expected Profit: ", expected_profit)
-    println("CVaR: ", cvar)    
-    println("VaR: ", var)
-    =#
-   println("sum of eta: ", sum(pi[s]*JuMP.value(eta[s]) for s in S))
+
 
     return expected_profit, cvar
 end
@@ -120,37 +111,34 @@ profit_two = Float64[]
 cvar_two = Float64[]
 
 for beta in 0.0:0.1:1.0
+    
     exp_profit_one, cvar_val_one = optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha, beta, pricing_scheme="one-price")
     push!(profit_one, exp_profit_one) 
     push!(cvar_one, cvar_val_one)
-
+    
    exp_profit_two, cvar_val_two = optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha, beta, pricing_scheme="two-price")
    push!(profit_two, exp_profit_two)
    push!(cvar_two, cvar_val_two)
+   
 end
-#=
+
 figure(figsize=(10,6))
-plot(cvar_one ./ 1_000, profit_one ./ 1_000, "o-", label="One-Price Market")
-plot(cvar_two ./ 1_000, profit_two ./ 1_000, "s-", label="Two-Price Market")
+plot(cvar_one ./ 1_000, profit_one ./ 1_000, "o-", label="One-Price Scheme")
+plot(cvar_two ./ 1_000, profit_two ./ 1_000, "o-", label="Two-Price Scheme")
 ylabel("Expected Profit (EURk)", fontsize=16)
-xlabel("Conditional Value at Risk (CVaR, EURk)", fontsize=16)
-title("Risk-Averse Offering Strategy: Expected Profit vs CVaR (200 scenarios)", fontsize=18)
+xlabel("CVaR (EURk)", fontsize=16)
+#title("Risk-Averse Offering Strategy: Expected Profit vs CVaR (200 scenarios)", fontsize=18)
 legend(fontsize=14)
 grid(true)
 gca().tick_params(axis="both", which="major", labelsize=14)
 tight_layout()
 show()
 display(gcf())
-sleep(0)  # <<< Wait 10 seconds to see the figure
-=#
 
-println("Expected Profits (One-Price): ", profit_one)
-println("CVaR Values (One-Price): ", cvar_one)
-println("Expected Profits (Two-Price): ", profit_two)
-println("CVaR Values (Two-Price): ", cvar_two)
+
 
 ### Part 2: Compare two-price with different number of scenarios
-#=
+
 scenario_counts = [100, 200, 300]
 results = Dict{Int, Tuple{Vector{Float64}, Vector{Float64}}}()
 
@@ -171,12 +159,12 @@ end
 
 figure(figsize=(10,6))
 for (n_scenarios, (cvar_vals, profit_vals)) in results
-    plot(cvar_vals ./ 1_000, profit_vals ./ 1_000, marker="o", label="Two-Price: $n_scenarios scenarios")
+    plot(cvar_vals ./ 1_000, profit_vals ./ 1_000, "o-", label="Two-Price: $n_scenarios scenarios")
 end
 
 ylabel("Expected Profit (EURk)", fontsize=16)
-xlabel("Conditional Value at Risk (CVaR, EURk)", fontsize=16)
-title("Risk-Averse Offering Strategy for Different Scenario Numbers (Two-Price)", fontsize=18)
+xlabel("CVaR (EURk)", fontsize=16)
+#title("Risk-Averse Offering Strategy for Different Scenario Numbers (Two-Price)", fontsize=18)
 legend(fontsize=14)
 grid(true)
 gca().tick_params(axis="both", which="major", labelsize=14)
@@ -184,6 +172,6 @@ tight_layout()
 show()
 display(gcf())
 sleep(0)  # <<< Wait 10 seconds to see the figure
-=#
+
 end_time = time()
 println(" Total computation time: $(round(end_time - start_time, digits=2)) seconds")
