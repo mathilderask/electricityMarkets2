@@ -1,3 +1,4 @@
+# ========== Functions for Task 1 ========== #
 # Function from 1.4
 
 function scenario_generator(no_of_scenarios)
@@ -27,7 +28,66 @@ function scenario_generator(no_of_scenarios)
     return p_real_matrix, lambda_DA_matrix, system_status_matrix
 end
 
-# ========== Functions from Task 2 ========== #
+function optimise_bidding_quantity_extended(p_real, lambda_DA, system_status; alpha=0.9, beta=0.0, pricing_scheme)
+
+    m = Model(HiGHS.Optimizer)
+    set_silent(m)
+
+    T = 1:size(p_real, 1)  # hours
+    S = 1:size(p_real, 2)  # scenarios
+    pi = fill(1 / length(S), length(S))  # equal scenario probabilities
+    no_scenarios = size(p_real, 2)
+
+    @variable(m, 0 <= p[T] <= 500)
+    @variable(m, t_up[T, S] >= 0)
+    @variable(m, t_down[T, S] >= 0)
+    @variable(m, t_delta[T, S])
+
+    @variable(m, zeta)
+    @variable(m, eta[S] >= 0)
+
+    @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
+    @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
+
+
+    # Pricing scheme
+    if pricing_scheme == "one-price"
+        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+        down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+    elseif pricing_scheme == "two-price"
+        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1 * lambda_DA[t, s] for t in T, s in S]
+        down_price = [system_status[t, s] == 1 ? 1 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
+    else
+        error("Invalid pricing scheme. Use 'one-price' or 'two-price'.")
+    end
+
+    # Define profit per scenario
+    @expression(m, Profit[s in S], sum(
+        lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
+        for t in T
+    ))
+    
+    # CVaR constraints using Profit[s]
+    @constraint(m, [s in S], eta[s] >= zeta - Profit[s])
+
+
+    # Objective using Profit[s]
+    @objective(m, Max,
+        (1 - beta) * sum(1/no_scenarios * Profit[s] for s in S)
+        + beta * (zeta - (1 / (1 - alpha)) * sum(1/no_scenarios * eta[s] for s in S))
+    )
+
+    
+    optimize!(m)    
+    opt_production = JuMP.value.(p)
+    scenario_profits = [JuMP.value(Profit[s]) for s in S]
+    expected_profit = sum(pi[s] * scenario_profits[s] for s in S)
+    cvar = JuMP.value(zeta) - (1 / (1 - alpha)) * sum(pi[s]*JuMP.value(eta[s]) for s in S)
+
+    return opt_production, expected_profit, cvar
+end
+
+# ========== Functions for Task 2 ========== #
 
 function add_p90_passrate_line!(c_up, test_profiles, p_threshold)
     N_test, T = size(test_profiles)
