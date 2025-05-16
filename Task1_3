@@ -9,7 +9,7 @@ system_status_DF = CSV.read("power_system_conditions.csv", DataFrame; delim=',',
 scenario_ID = scenarios_DF[:, 1]
 Random.seed!(8) #Makes the random number generation reproducible
 
-function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme) # later add the input: "pricing_scheme", where it will be either "one-price" or "two-price"
+function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme) 
     # now these inputs are data frames with all the scenarios as columns and hours as rows
     # this is to enable stochastic modelling
         m = Model(HiGHS.Optimizer)
@@ -46,12 +46,13 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
         optimize!(m)
         opt_production = JuMP.value.(p)
         expected_profit = JuMP.objective_value(m)
-        println("Expected profit in sample: ", expected_profit)
-        println("Optimal production: ", opt_production)
         return opt_production, expected_profit
     end
 
     function evaluate_expected_profit(p_opt, p_real, lambda_DA, system_status, pricing_scheme)
+        # function that calculates the expected profit for the out-of-sample scenarios
+        # p_opt is the optimal production from the in-sample scenarios
+        # p_real is the real production from the out-of-sample scenarios
         T = 1:size(p_real, 1)
         S = 1:size(p_real, 2)
     
@@ -133,6 +134,7 @@ function cross_validation(num_insample_scenarios, pricing_scheme)
     return mean(per_scenario_profits_in), mean(per_scenario_profits_out)
 end
 
+### Find the profits for 200 in sample size for both schemes ###
 prof_in_sample_200_1price , prof_out_sample_1400_1price = cross_validation(200, "one-price")
 prof_in_sample_200_2price , prof_out_sample_1400_2price = cross_validation(200, "two-price")
 
@@ -141,34 +143,49 @@ println("Out-of-sample average profit one price (200 scenario optimisation): ", 
 println("In-sample average profit two price (200 scenario optimisation): ", prof_in_sample_200_2price)
 println("Out-of-sample average profit two price (200 scenario optimisation): ", prof_out_sample_1400_2price)
 
-#=
+### Now repeat for 400, 100 and 20 in sample size one-price scheme###
 prof_in_sample_400_1price , prof_out_sample_1200_1price = cross_validation(400, "one-price")
-prof_in_sample_200_1price , prof_out_sample_1400_1price = cross_validation(200, "one-price")
 prof_in_sample_100_1price , prof_out_sample_1500_1price = cross_validation(100, "one-price")
 prof_in_sample_20_1price , prof_out_sample_1580_1price = cross_validation(20, "one-price")
 
+
+### Plot graph to compare profits for different in-sample sizes for one-price scheme ###
 Out_sample_profit = [prof_out_sample_1580_1price, prof_out_sample_1500_1price, prof_out_sample_1400_1price, prof_out_sample_1200_1price]
 In_sample_profit = [prof_in_sample_20_1price, prof_in_sample_100_1price, prof_in_sample_200_1price, prof_in_sample_400_1price]
 Sample_size = [20, 100, 200, 400]
 
-#println("In-sample average profit: ", avg_prof_in_sample)
-#println("Out-of-sample average profit: ", avg_prof_out_sample)
-
-# Convert category labels to positions
-
 using PyPlot
-# Create bar plot with grouped bars
+
 figure(figsize=(8, 5))
-
-plot(Sample_size, In_sample_profit, marker="o", label="In-sample profit", linewidth=2)
-plot(Sample_size, Out_sample_profit, marker="s", label="Out-of-sample profit", linewidth=2)
-
-# Labels and formatting
+plot(Sample_size, In_sample_profit, marker="o", label="Average in-sample profit", linewidth=2)
+plot(Sample_size, Out_sample_profit, marker="s", label="Average out-of-sample profit", linewidth=2)
 xlabel("Number of In-sample Scenarios")
-ylabel("Expected Profit")
-title("In- vs Out-of-Sample Profit (One-Price Scheme)")
+ylabel("Expected Profit (EUR)")
+title("Average In- vs Out-of-Sample Profit (One-Price Scheme)")
 legend()
 grid(true)
 tight_layout()
 show()
-=#
+
+### Now Repeat for two-price scheme ###
+prof_in_sample_400_2price , prof_out_sample_1200_2price = cross_validation(400, "two-price")
+prof_in_sample_100_2price , prof_out_sample_1500_2price = cross_validation(100, "two-price")
+prof_in_sample_20_2price , prof_out_sample_1580_2price = cross_validation(20, "two-price")
+
+# Plot graph to compare profits for different in-sample sizes for two-price scheme
+Out_sample_profit = [prof_out_sample_1580_2price, prof_out_sample_1500_2price, prof_out_sample_1400_2price, prof_out_sample_1200_2price]
+In_sample_profit = [prof_in_sample_20_2price, prof_in_sample_100_2price, prof_in_sample_200_2price, prof_in_sample_400_2price]
+Sample_size = [20, 100, 200, 400]
+
+using PyPlot
+
+figure(figsize=(8, 5))
+plot(Sample_size, In_sample_profit, marker="o", label="Average in-sample profit", linewidth=2)
+plot(Sample_size, Out_sample_profit, marker="s", label="Average out-of-sample profit", linewidth=2)
+xlabel("Number of In-sample Scenarios")
+ylabel("Expected Profit (EUR)")
+title("Average In- vs Out-of-Sample Profit (Two-Price Scheme)")
+legend()
+grid(true)
+tight_layout()
+show()
