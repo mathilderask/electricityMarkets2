@@ -1,5 +1,8 @@
-using JuMP, HiGHS, CSV, DataFrames
+using JuMP, HiGHS, CSV, DataFrames, Dates
 include("functions.jl")  # Load functions from Functions.jl
+
+# === Start timer ===
+start_time = now()
 
 # === Load data ===
 df = CSV.read("Stochastic_Load_Profiles.csv", DataFrame)
@@ -38,6 +41,10 @@ for p_thresh in 0.80:0.01:1.00
     # Store result
     push!(results, (P90_Threshold = p_thresh, Optimal_Bid = c_opt, Compliance_Rate = compliance_rate))
 end
+
+# === End timer and report duration ===
+end_time = now()
+println("Total execution time: ", end_time - start_time)
 
 # === Print Results ===
 println("P90 Threshold\tOptimal Bid\tCompliance Rate (%)")
