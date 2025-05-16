@@ -1,6 +1,7 @@
-#import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
-using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Dates
+import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
+using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Dates, PyPlot
 include("Task1_1_and1_2.jl") # Load functions from Task1_1_and1_2.jl
+include("functions.jl") # Load functions from functions.jl
 
 start_time = time()
 
@@ -12,66 +13,6 @@ system_status_DF = CSV.read("power_system_conditions.csv", DataFrame; delim=',',
 scenario_ID = scenarios_DF[:, 1]
 Random.seed!(8) #Makes the random number generation reproducible
 
-function optimise_bidding_quantity(p_real, lambda_DA, system_status; alpha=0.9, beta=0.0, pricing_scheme)
-
-    m = Model(HiGHS.Optimizer)
-    set_silent(m)
-
-    T = 1:size(p_real, 1)  # hours
-    S = 1:size(p_real, 2)  # scenarios
-    pi = fill(1 / length(S), length(S))  # equal scenario probabilities
-    no_scenarios = size(p_real, 2)
-
-    @variable(m, 0 <= p[T] <= 500)
-    @variable(m, t_up[T, S] >= 0)
-    @variable(m, t_down[T, S] >= 0)
-    @variable(m, t_delta[T, S])
-
-    @variable(m, zeta)
-    @variable(m, eta[S] >= 0)
-
-    @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
-    @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
-
-
-    # Pricing scheme
-    if pricing_scheme == "one-price"
-        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-        down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-    elseif pricing_scheme == "two-price"
-        up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1 * lambda_DA[t, s] for t in T, s in S]
-        down_price = [system_status[t, s] == 1 ? 1 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-    else
-        error("Invalid pricing scheme. Use 'one-price' or 'two-price'.")
-    end
-
-    # Define profit per scenario
-    @expression(m, Profit[s in S], sum(
-        lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
-        for t in T
-    ))
-    
-    # CVaR constraints using Profit[s]
-    @constraint(m, [s in S], eta[s] >= zeta - Profit[s])
-
-
-    # Objective using Profit[s]
-    @objective(m, Max,
-        (1 - beta) * sum(1/no_scenarios * Profit[s] for s in S)
-        + beta * (zeta - (1 / (1 - alpha)) * sum(1/no_scenarios * eta[s] for s in S))
-    )
-
-    
-    optimize!(m)    
-    opt_production = JuMP.value.(p)
-    scenario_profits = [JuMP.value(Profit[s]) for s in S]
-    expected_profit = sum(pi[s] * scenario_profits[s] for s in S)
-    cvar = JuMP.value(zeta) - (1 / (1 - alpha)) * sum(pi[s]*JuMP.value(eta[s]) for s in S)
-
-    return opt_production, expected_profit, cvar
-end
-
-using PyPlot
 
 # β values for risk-aversion parameter
 β_values = collect(0.0:0.05:1.0)
@@ -88,12 +29,12 @@ profit_two = Float64[]
 cvar_two = Float64[]
 
 for β in β_values
-    opt_prod_one, exp_profit_one, cvar_val_one = optimise_bidding_quantity(p_real, lambda_DA, system_status;
+    opt_prod_one, exp_profit_one, cvar_val_one = optimise_bidding_quantity4(p_real, lambda_DA, system_status;
         alpha=0.9, beta=β, pricing_scheme="one-price")
     push!(profit_one, exp_profit_one)
     push!(cvar_one, cvar_val_one)
 
-    opt_prod_two, exp_profit_two, cvar_val_two = optimise_bidding_quantity(p_real, lambda_DA, system_status;
+    opt_prod_two, exp_profit_two, cvar_val_two = optimise_bidding_quantity4(p_real, lambda_DA, system_status;
         alpha=0.9, beta=β, pricing_scheme="two-price")
     push!(profit_two, exp_profit_two)
     push!(cvar_two, cvar_val_two)
@@ -126,7 +67,7 @@ for n_scenarios in scenario_counts
     cvar_vals = Float64[]
 
     for β in β_values
-        _, exp_profit, cvar_val = optimise_bidding_quantity(p_real2, lambda_DA2, system_status2;
+        opt_prod, exp_profit, cvar_val = optimise_bidding_quantity4(p_real2, lambda_DA2, system_status2;
             alpha=0.9, beta=β, pricing_scheme="two-price")
         push!(profit_vals, exp_profit)
         push!(cvar_vals, cvar_val)

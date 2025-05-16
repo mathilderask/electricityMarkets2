@@ -1,6 +1,8 @@
 import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Statistics
 using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Statistics
 
+include("functions.jl") # Load
+
 p_real_DF = CSV.read("windscenarios_zone2.csv", DataFrame;  delim=',', header=true)
 lambda_DA_DF = CSV.read("DA_hourly_price_scenarios.csv", DataFrame;  delim=',', header=true)
 scenarios_DF = CSV.read("scenario_combinations.csv", DataFrame; delim=',', header=true)

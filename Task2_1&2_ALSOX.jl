@@ -1,5 +1,4 @@
 using JuMP, HiGHS, CSV, DataFrames
-include("functions.jl")  # Load functions from Functions.jl
 
 # This model treats each minute as a separate scenario (strict minute-wise)
 
@@ -36,9 +35,18 @@ println("Optimal Reserve Bid (strict minute-wise ALSO-X): ", value(c_up))
 println("Total violation weight (relaxed): ", sum(value.(y)))
 
 
-
-
 # --- TASK 2.2 ---
+# --- Calculate pass rate for out-of-sample ---
+function add_p90_passrate_line!(c_up, test_profiles, p_threshold)
+    N_test, T = size(test_profiles)
+    min_required_minutes = ceil(Int, p_threshold * T)  # E.g. 54 out of 60 minutes
+
+    # Count compliant profiles (i.e., those with ≥ 54 minutes above c_up)
+    passed_count = count(i -> sum(test_profiles[i, :] .>= c_up) >= min_required_minutes, 1:N_test)
+    pass_rate = passed_count / N_test * 100
+    return pass_rate
+end
+
 
 # --- Plotting ---
 using Plots, Statistics
@@ -46,7 +54,7 @@ using Plots, Statistics
 # --- Calculate out-of-sample overbid frequencies ---
 N_test, T = size(test_profiles)
 overbid_frequencies = [100 * sum(value(c_up) .> test_profiles[i, :]) / T for i in 1:N_test]
-pass_rate = compute_pass_rate(value(c_up), test_profiles; p_threshold) 
+pass_rate = add_p90_passrate_line!(value(c_up), test_profiles,p_threshhold)
 
 
 # --- Define histogram bins ---
