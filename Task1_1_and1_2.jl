@@ -1,11 +1,13 @@
 import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
 using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, PyPlot
-include("functions.jl")
+start_time = time()
 
+include("functions.jl")
 p_real_DF = CSV.read("windscenarios_zone2.csv", DataFrame;  delim=',', header=true)
 lambda_DA_DF = CSV.read("DA_hourly_price_scenarios.csv", DataFrame;  delim=',', header=true)
 scenarios_DF = CSV.read("scenario_combinations.csv", DataFrame; delim=',', header=true)
 system_status_DF = CSV.read("power_system_conditions.csv", DataFrame; delim=',', header=true)
+ion()
 
 scenario_ID = scenarios_DF[:, 1]
 global capacity = 500 # Installed capacity in MW
@@ -41,7 +43,6 @@ show()
 # Evaluate the profit for each scenario in one-price scheme and plot the histogram 
 production_values = collect(opt_production)
 profit_per_scenario = evaluate_profit_per_scenario(production_values, p_real, lambda_DA, system_status, "one-price")
-using PyPlot
 figure()
 hist(profit_per_scenario ./ 1e6, bins=30, edgecolor="black")
 #title("Profit Distribution for One-Price Scheme")
@@ -78,7 +79,6 @@ show()
 # Evaluate the profit for each scenario in two-price scheme and plot the histogram
 production_values = collect(opt_production_twoprice)
 profit_per_scenario = evaluate_profit_per_scenario(production_values, p_real, lambda_DA, system_status, "two-price")
-using PyPlot
 figure()
 hist(profit_per_scenario  ./ 1e6, bins=30, edgecolor="black")
 #title("Profit Distribution for Two-Price Scheme")
@@ -87,3 +87,7 @@ ylabel("Number of Observations")
 grid(true)
 show()
 display(gcf())
+
+end_time = time()
+println("⏱️ Total computation time: $(round(end_time - start_time, digits=2)) seconds")
+show(block=true)

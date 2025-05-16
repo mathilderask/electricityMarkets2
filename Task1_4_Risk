@@ -1,6 +1,6 @@
 import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
 using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Dates, PyPlot
-include("Task1_1_and1_2.jl") # Load functions from Task1_1_and1_2.jl
+#include("Task1_1_and1_2.jl") # Load functions from Task1_1_and1_2.jl
 include("functions.jl") # Load functions from functions.jl
 
 start_time = time()
@@ -9,7 +9,7 @@ p_real_DF = CSV.read("windscenarios_zone2.csv", DataFrame;  delim=',', header=tr
 lambda_DA_DF = CSV.read("DA_hourly_price_scenarios.csv", DataFrame;  delim=',', header=true)
 scenarios_DF = CSV.read("scenario_combinations.csv", DataFrame; delim=',', header=true)
 system_status_DF = CSV.read("power_system_conditions.csv", DataFrame; delim=',', header=true)
-
+ion()
 scenario_ID = scenarios_DF[:, 1]
 Random.seed!(8) #Makes the random number generation reproducible
 
@@ -94,3 +94,5 @@ sleep(0)  # <<< Wait 10 seconds to see the figure
 
 end_time = time()
 println("⏱️ Total computation time: $(round(end_time - start_time, digits=2)) seconds")
+
+show(block=true)
