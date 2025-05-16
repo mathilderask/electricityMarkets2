@@ -28,12 +28,12 @@ profit_two = Float64[]
 cvar_two = Float64[]
 
 for β in β_values
-    opt_prod_one, exp_profit_one, cvar_val_one = optimise_bidding_quantity_extended(p_real, lambda_DA, system_status;
+    opt_prod_one, exp_profit_one, cvar_val_one = optimise_bidding_quantity4(p_real, lambda_DA, system_status;
         alpha=0.9, beta=β, pricing_scheme="one-price")
     push!(profit_one, exp_profit_one)
     push!(cvar_one, cvar_val_one)
 
-    opt_prod_two, exp_profit_two, cvar_val_two = optimise_bidding_quantity_extended(p_real, lambda_DA, system_status;
+    opt_prod_two, exp_profit_two, cvar_val_two = optimise_bidding_quantity4(p_real, lambda_DA, system_status;
         alpha=0.9, beta=β, pricing_scheme="two-price")
     push!(profit_two, exp_profit_two)
     push!(cvar_two, cvar_val_two)
@@ -66,7 +66,7 @@ for n_scenarios in scenario_counts
     cvar_vals = Float64[]
 
     for β in β_values
-        opt_prod, exp_profit, cvar_val = optimise_bidding_quantity_extended(p_real2, lambda_DA2, system_status2;
+        opt_prod, exp_profit, cvar_val = optimise_bidding_quantity4(p_real2, lambda_DA2, system_status2;
             alpha=0.9, beta=β, pricing_scheme="two-price")
         push!(profit_vals, exp_profit)
         push!(cvar_vals, cvar_val)

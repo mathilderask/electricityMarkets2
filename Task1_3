@@ -1,5 +1,7 @@
-import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Statistics
+#import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Statistics
 using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Statistics
+
+include("functions.jl") # Load
 
 p_real_DF = CSV.read("windscenarios_zone2.csv", DataFrame;  delim=',', header=true)
 lambda_DA_DF = CSV.read("DA_hourly_price_scenarios.csv", DataFrame;  delim=',', header=true)
@@ -9,129 +11,6 @@ system_status_DF = CSV.read("power_system_conditions.csv", DataFrame; delim=',',
 scenario_ID = scenarios_DF[:, 1]
 Random.seed!(8) #Makes the random number generation reproducible
 
-function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_scheme) # later add the input: "pricing_scheme", where it will be either "one-price" or "two-price"
-    # now these inputs are data frames with all the scenarios as columns and hours as rows
-    # this is to enable stochastic modelling
-        m = Model(HiGHS.Optimizer)
-        set_silent(m) # suppress output from the solver
-    
-        T = 1:size(p_real, 1) # hours
-        S = 1:size(p_real, 2)  # scenarios
-    
-        @variable(m, p[T])
-        @variable(m, t_up[T, S] >= 0)
-        @variable(m, t_down[T, S] >= 0)
-        @variable(m, t_delta[T, S])
-    
-        @constraint(m, [t in T], p[t] >= 0)
-        @constraint(m, [t in T], p[t] <= 500)
-        @constraint(m, [t in T, s in S], t_delta[t, s] == p_real[t, s] - p[t])
-        @constraint(m, [t in T, s in S], t_delta[t, s] == t_up[t, s] - t_down[t, s])
-        @constraint(m, [t in T, s in S], t_up[t, s] >= 0)
-
-        if pricing_scheme == "one-price"
-            up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-            down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-        elseif pricing_scheme == "two-price"
-            up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1 * lambda_DA[t, s] for t in T, s in S]
-            down_price = [system_status[t, s] == 1 ? 1 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-        else
-            error("Invalid pricing scheme. Use 'one-price' or 'two-price'.")
-        end
-        @objective(m, Max, sum(
-                lambda_DA[t, s] * p[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
-                for  t in T, s in S
-            )
-        )
-        optimize!(m)
-        opt_production = JuMP.value.(p)
-        expected_profit = JuMP.objective_value(m)
-        println("Expected profit in sample: ", expected_profit)
-        println("Optimal production: ", opt_production)
-        return opt_production, expected_profit
-    end
-
-    function evaluate_expected_profit(p_opt, p_real, lambda_DA, system_status, pricing_scheme)
-        T = 1:size(p_real, 1)
-        S = 1:size(p_real, 2)
-    
-        t_delta = [p_real[t, s] - p_opt[t] for t in T, s in S]
-        t_up = [max(t, 0) for t in t_delta]
-        t_down = [max(-t, 0) for t in t_delta]
-    
-        if pricing_scheme == "one-price"
-            up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-            down_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-        elseif pricing_scheme == "two-price"
-            up_price = [system_status[t, s] == 1 ? 0.85 * lambda_DA[t, s] : 1 * lambda_DA[t, s] for t in T, s in S]
-            down_price = [system_status[t, s] == 1 ? 1 * lambda_DA[t, s] : 1.25 * lambda_DA[t, s] for t in T, s in S]
-        end
-        expected_profit = sum(lambda_DA[t, s] * p_opt[t] + up_price[t, s] * t_up[t, s] - down_price[t, s] * t_down[t, s]
-                              for t in T, s in S)
-        println("Expected profit out sample: ", expected_profit)
-        return expected_profit
-    end
-
-function cross_validation(num_insample_scenarios, pricing_scheme)
-    num_scenarios = length(scenario_ID)
-
-    in_sample_profits = []
-    out_sample_profits = []
-    fold_size = num_insample_scenarios  # 200
-    num_outsample_scenarios = num_scenarios - num_insample_scenarios  
-    num_folds = div(num_scenarios, fold_size)  # 8 folds in normal case
-
-    shuffled_indices = shuffle(1:num_scenarios)  # shuffle once at the beginning
-
-    for fold in 1:num_folds
-        start_idx = (fold - 1) * fold_size + 1
-        end_idx = fold * fold_size
-
-        # start_idx:end_idx defines the indices for the current fold
-        in_indices = shuffled_indices[start_idx:end_idx]
-        out_indices = setdiff(shuffled_indices, in_indices)
-    
-        p_real_in_idx = scenarios_DF[in_indices, 2]
-        lambda_DA_in_idx = scenarios_DF[in_indices, 3]
-        system_status_in_idx = scenarios_DF[in_indices, 4]
-
-        p_real_in_cols = [p_real_DF[:, i+1] for i in p_real_in_idx]
-        col_names_in = Symbol.("selected_scenario_", 1:length(p_real_in_cols))  # custom unique names
-        p_real_in = Matrix(DataFrame(p_real_in_cols, col_names_in))*500 # scale for 500MW wind farm
-
-        lambda_DA_in_cols = [lambda_DA_DF[:, i+1] for i in lambda_DA_in_idx]
-        lambda_DA_in = Matrix(DataFrame(lambda_DA_in_cols, col_names_in))
-
-        system_status_in_cols = [system_status_DF[:, i+1] for i in system_status_in_idx]
-        system_status_in = Matrix(DataFrame(system_status_in_cols, col_names_in))
-
-        p_real_out_idx = scenarios_DF[out_indices, 2]
-        lambda_DA_out_idx = scenarios_DF[out_indices, 3]
-        system_status_out_idx = scenarios_DF[out_indices, 4]
-
-        p_real_out_cols = [p_real_DF[:, i+1] for i in p_real_out_idx]
-        col_names_out = Symbol.("selected_scenario_", 1:length(p_real_out_cols))  # custom unique names
-        p_real_out = Matrix(DataFrame(p_real_out_cols, col_names_out))*500 # scale for 500MW wind farm
-
-        lambda_DA_out_cols = [lambda_DA_DF[:, i+1] for i in lambda_DA_out_idx]
-        lambda_DA_out = Matrix(DataFrame(lambda_DA_out_cols, col_names_out))
-
-        system_status_out_cols = [system_status_DF[:, i+1] for i in system_status_out_idx]
-        system_status_out = Matrix(DataFrame(system_status_out_cols, col_names_out))
-    
-        p_opt, in_profit = optimise_bidding_quantity(p_real_in, lambda_DA_in, system_status_in, pricing_scheme)
-        push!(in_sample_profits, in_profit)
-
-        out_profit = evaluate_expected_profit(p_opt, p_real_out, lambda_DA_out, system_status_out, pricing_scheme)
-        push!(out_sample_profits, out_profit)
-
-    end
-
-    per_scenario_profits_in = in_sample_profits ./ num_insample_scenarios
-    per_scenario_profits_out = out_sample_profits ./ num_outsample_scenarios
-
-    return mean(per_scenario_profits_in), mean(per_scenario_profits_out)
-end
 
 prof_in_sample_200_1price , prof_out_sample_1400_1price = cross_validation(200, "one-price")
 prof_in_sample_200_2price , prof_out_sample_1400_2price = cross_validation(200, "two-price")
@@ -140,6 +19,15 @@ println("In-sample average profit one price (200 scenario optimisation): ", prof
 println("Out-of-sample average profit one price (200 scenario optimisation): ", prof_out_sample_1400_1price)
 println("In-sample average profit two price (200 scenario optimisation): ", prof_in_sample_200_2price)
 println("Out-of-sample average profit two price (200 scenario optimisation): ", prof_out_sample_1400_2price)
+
+
+
+
+
+
+
+
+
 
 #=
 prof_in_sample_400_1price , prof_out_sample_1200_1price = cross_validation(400, "one-price")
