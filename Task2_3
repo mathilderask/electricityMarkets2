@@ -13,6 +13,8 @@ max_capacity = 600
 M = 600  # Big M for constraint deactivation
 N_test, _ = size(test_profiles)
 
+
+
 # === Evaluation helper ===
 function add_p90_passrate_line!(c_up, test_profiles, p_threshold)
     min_required_minutes = ceil(Int, p_threshold * T)
@@ -40,7 +42,7 @@ for p_thresh in 0.80:0.01:1.00
     c_opt = value(c_up)
 
     # Evaluate out-of-sample compliance
-    compliance_rate = add_p90_passrate_line!(c_opt, test_profiles; p_threshold=p_thresh)
+    compliance_rate = add_p90_passrate_line!(c_opt, test_profiles, p_thresh)
 
     # Store result
     push!(results, (P90_Threshold = p_thresh, Optimal_Bid = c_opt, Compliance_Rate = compliance_rate))
@@ -52,6 +54,10 @@ for row in eachrow(results)
     println("$(round(row.P90_Threshold, digits=2))\t\t$(round(row.Optimal_Bid, digits=2))\t\t$(round(row.Compliance_Rate, digits=2))")
 end
 
+
+
+
+"""
 # === Plotting ===
 using PyPlot
 
@@ -83,3 +89,5 @@ grid(true)
 tight_layout()
 show()
 display(gcf())
+
+"""

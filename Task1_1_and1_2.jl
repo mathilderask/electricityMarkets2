@@ -8,6 +8,7 @@ scenarios_DF = CSV.read("scenario_combinations.csv", DataFrame; delim=',', heade
 system_status_DF = CSV.read("power_system_conditions.csv", DataFrame; delim=',', header=true)
 
 scenario_ID = scenarios_DF[:, 1]
+global capacity = 500 # Installed capacity in MW
 Random.seed!(8) #Makes the random number generation reproducible
 
 function scenario_generator(no_of_scenarios)
@@ -30,7 +31,7 @@ function scenario_generator(no_of_scenarios)
     system_status_cols = [system_status_DF[:, i+1] for i in system_status_indices]
     system_status = DataFrame(system_status_cols, col_names)
 
-    global capacity = 500 # Installed capacity in MW
+    
     p_real_matrix = Matrix(p_real) * capacity # scale for 500MW wind farm
     lambda_DA_matrix = Matrix(lambda_DA)
     system_status_matrix = Matrix(system_status)
@@ -45,7 +46,7 @@ function optimise_bidding_quantity(p_real, lambda_DA, system_status, pricing_sch
     S = 1:size(p_real, 2)  # scenarios
     no_scenarios = size(p_real, 2)
 
-    @variable(m, 0 <= p[T] <= 500)
+    @variable(m, 0 <= p[T] <= capacity)
     @variable(m, t_up[T, S] >= 0)
     @variable(m, t_down[T, S] >= 0)
     @variable(m, t_delta[T, S])
@@ -135,12 +136,13 @@ production_values = collect(opt_production)
 profit_per_scenario = evaluate_profit_per_scenario(production_values, p_real, lambda_DA, system_status, "one-price")
 using PyPlot
 figure()
-hist(profit_per_scenario, bins=30, edgecolor="black")
-title("Profit Distribution for One-Price Scheme")
-xlabel("Profit (€)")
-ylabel("Number of Scenarios")
+hist(profit_per_scenario ./ 1e6, bins=30, edgecolor="black")
+#title("Profit Distribution for One-Price Scheme")
+xlabel("Profit (EURm)")
+ylabel("Number of Observations")
 grid(true)
 show()
+display(gcf())
 
 
 opt_production_twoprice, expected_profit_twoprice = optimise_bidding_quantity(p_real, lambda_DA, system_status, "two-price")
@@ -165,15 +167,15 @@ grid(true, axis="y")
 xticks(hours)
 tight_layout()
 show()
-display(gcf())
 
 production_values = collect(opt_production_twoprice)
 profit_per_scenario = evaluate_profit_per_scenario(production_values, p_real, lambda_DA, system_status, "two-price")
 using PyPlot
 figure()
-hist(profit_per_scenario, bins=30, edgecolor="black")
-title("Profit Distribution for Two-Price Scheme")
-xlabel("Profit (€)")
-ylabel("Number of Scenarios")
+hist(profit_per_scenario  ./ 1e6, bins=30, edgecolor="black")
+#title("Profit Distribution for Two-Price Scheme")
+xlabel("Profit (EURm)")
+ylabel("Number of Observations")
 grid(true)
 show()
+display(gcf())
