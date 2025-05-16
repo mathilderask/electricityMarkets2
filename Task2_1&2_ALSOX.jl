@@ -54,7 +54,7 @@ using Plots, Statistics
 # --- Calculate out-of-sample overbid frequencies ---
 N_test, T = size(test_profiles)
 overbid_frequencies = [100 * sum(value(c_up) .> test_profiles[i, :]) / T for i in 1:N_test]
-pass_rate = add_p90_passrate_line!(value(c_up), test_profiles,p_threshhold)
+pass_rate = add_p90_passrate_line!(value(c_up), test_profiles,p_threshold)
 
 
 # --- Define histogram bins ---
