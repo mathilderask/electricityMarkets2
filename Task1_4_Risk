@@ -1,5 +1,12 @@
+<<<<<<< HEAD
 import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
 using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
+=======
+#import Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS
+using Pkg, JuMP, GLPK, DataFrames, CSV, Random, HiGHS, Dates, PyPlot
+include("Task1_1_and1_2.jl") # Load functions from Task1_1_and1_2.jl
+include("functions.jl") # Load functions from functions.jl
+>>>>>>> d96033e81dfbe4706f5f879c00877dd38c40fcea
 
 start_time = time()
 
@@ -11,6 +18,7 @@ system_status_DF = CSV.read("power_system_conditions.csv", DataFrame; delim=',',
 scenario_ID = scenarios_DF[:, 1]
 Random.seed!(8) #Makes the random number generation reproducible
 
+<<<<<<< HEAD
 function scenario_generator(no_of_scenarios)
 #### Returns a random selection of defined number of scenarios in.
 #### Returns 3 dataframes for the three variables where each column is corresponding data for a randomly selected scenario
@@ -100,6 +108,8 @@ end
 
 using PyPlot
 
+=======
+>>>>>>> d96033e81dfbe4706f5f879c00877dd38c40fcea
 # β values for risk-aversion parameter
 β_values = collect(0.0:0.05:1.0)
 
@@ -115,12 +125,20 @@ profit_two = Float64[]
 cvar_two = Float64[]
 
 for β in β_values
+<<<<<<< HEAD
     _, exp_profit_one, cvar_val_one = optimise_bidding_quantity(p_real, lambda_DA, system_status;
+=======
+    opt_prod_one, exp_profit_one, cvar_val_one = optimise_bidding_quantity_extended(p_real, lambda_DA, system_status;
+>>>>>>> d96033e81dfbe4706f5f879c00877dd38c40fcea
         alpha=0.9, beta=β, pricing_scheme="one-price")
     push!(profit_one, exp_profit_one)
     push!(cvar_one, cvar_val_one)
 
+<<<<<<< HEAD
     _, exp_profit_two, cvar_val_two = optimise_bidding_quantity(p_real, lambda_DA, system_status;
+=======
+    opt_prod_two, exp_profit_two, cvar_val_two = optimise_bidding_quantity_extended(p_real, lambda_DA, system_status;
+>>>>>>> d96033e81dfbe4706f5f879c00877dd38c40fcea
         alpha=0.9, beta=β, pricing_scheme="two-price")
     push!(profit_two, exp_profit_two)
     push!(cvar_two, cvar_val_two)
@@ -153,7 +171,7 @@ for n_scenarios in scenario_counts
     cvar_vals = Float64[]
 
     for β in β_values
-        _, exp_profit, cvar_val = optimise_bidding_quantity(p_real2, lambda_DA2, system_status2;
+        opt_prod, exp_profit, cvar_val = optimise_bidding_quantity_extended(p_real2, lambda_DA2, system_status2;
             alpha=0.9, beta=β, pricing_scheme="two-price")
         push!(profit_vals, exp_profit)
         push!(cvar_vals, cvar_val)
