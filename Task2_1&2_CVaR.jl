@@ -1,4 +1,6 @@
 using JuMP, HiGHS, CSV, DataFrames
+include("functions.jl")  # Load functions from Functions.jl
+
 
 # --- Load and clean data ---
 df = CSV.read("Stochastic_Load_Profiles.csv", DataFrame)
@@ -32,27 +34,15 @@ println("Optimal Reserve Bid (CVaR): ", value(c_up))
 println("VaR threshold (beta): ", value(beta))
 
 
+
 # --- TASK 2.2 ---
-# --- Calculate pass rate for out-of-sample ---
-function add_p90_passrate_line!(c_up, test_profiles; p_threshold=0.9)
-    N_test, T = size(test_profiles)
-    min_required_minutes = ceil(Int, p_threshold * T)  # E.g. 54 out of 60 minutes
-
-    # Count compliant profiles (i.e., those with ≥ 54 minutes above c_up)
-    passed_count = count(i -> sum(test_profiles[i, :] .>= c_up) >= min_required_minutes, 1:N_test)
-    pass_rate = passed_count / N_test * 100
-
-    return pass_rate
-end
-
 
 # --- Plotting ---
 using Plots, Statistics
 
-
 N_test, T = size(test_profiles)  # e.g., 200 × 60
 overbid_frequencies = zeros(Float64, N_test)
-pass_rate = add_p90_passrate_line!(value(c_up), test_profiles)
+pass_rate = compute_pass_rate(value(c_up), test_profiles; p_threshold=0.9)  # P90 threshold
 
 # Classify out-of-sample test scenarios
 num_with_overbid = count(i -> any(value(c_up) .> test_profiles[i, :]), 1:N_test)

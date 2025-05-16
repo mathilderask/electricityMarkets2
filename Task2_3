@@ -1,4 +1,5 @@
 using JuMP, HiGHS, CSV, DataFrames
+include("functions.jl")  # Load functions from Functions.jl
 
 # === Load data ===
 df = CSV.read("Stochastic_Load_Profiles.csv", DataFrame)
@@ -12,14 +13,6 @@ N, T = size(F_all)
 max_capacity = 600
 M = 600  # Big M for constraint deactivation
 N_test, _ = size(test_profiles)
-
-# === Evaluation helper ===
-function add_p90_passrate_line!(c_up, test_profiles, p_threshold)
-    min_required_minutes = ceil(Int, p_threshold * T)
-    passed_count = count(i -> sum(test_profiles[i, :] .>= c_up) >= min_required_minutes, 1:N_test)
-    pass_rate = passed_count / N_test * 100
-    return pass_rate
-end
 
 # === Loop over different P90 thresholds ===
 results = DataFrame(P90_Threshold=Float64[], Optimal_Bid=Float64[], Compliance_Rate=Float64[])
@@ -40,7 +33,7 @@ for p_thresh in 0.80:0.01:1.00
     c_opt = value(c_up)
 
     # Evaluate out-of-sample compliance
-    compliance_rate = add_p90_passrate_line!(c_opt, test_profiles; p_threshold=p_thresh)
+    compliance_rate = compute_pass_rate(c_opt, test_profiles; p_threshold=p_thresh)
 
     # Store result
     push!(results, (P90_Threshold = p_thresh, Optimal_Bid = c_opt, Compliance_Rate = compliance_rate))
